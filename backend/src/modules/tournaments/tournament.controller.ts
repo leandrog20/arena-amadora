@@ -25,7 +25,15 @@ export class TournamentController {
 
   async getById(request: FastifyRequest, reply: FastifyReply) {
     const { id } = request.params as { id: string }
-    const result = await tournamentService.getById(id)
+    // userId é opcional (rota pública), usado apenas para checar isParticipant
+    const userId = (request as any).userId as string | undefined
+    const result = await tournamentService.getById(id, userId)
+    return sendSuccess(reply, result)
+  }
+
+  async getParticipants(request: FastifyRequest, reply: FastifyReply) {
+    const { id } = request.params as { id: string }
+    const result = await tournamentService.getParticipants(id)
     return sendSuccess(reply, result)
   }
 

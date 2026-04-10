@@ -180,8 +180,14 @@ class ApiClient {
     return promise
   }
 
+  /** Extrai o recurso principal do endpoint: /tournaments/123/join → tournaments */
+  private getResource(endpoint: string): string {
+    const segments = endpoint.split('/').filter(Boolean)
+    return segments[0] || ''
+  }
+
   async post<T>(endpoint: string, body?: unknown, config?: RequestConfig): Promise<T> {
-    this.invalidateCache()
+    this.invalidateCache(this.getResource(endpoint))
     return this.request<T>(endpoint, {
       ...config,
       method: 'POST',
@@ -190,7 +196,7 @@ class ApiClient {
   }
 
   async put<T>(endpoint: string, body?: unknown, config?: RequestConfig): Promise<T> {
-    this.invalidateCache()
+    this.invalidateCache(this.getResource(endpoint))
     return this.request<T>(endpoint, {
       ...config,
       method: 'PUT',
@@ -199,7 +205,7 @@ class ApiClient {
   }
 
   async patch<T>(endpoint: string, body?: unknown, config?: RequestConfig): Promise<T> {
-    this.invalidateCache()
+    this.invalidateCache(this.getResource(endpoint))
     return this.request<T>(endpoint, {
       ...config,
       method: 'PATCH',
@@ -208,7 +214,7 @@ class ApiClient {
   }
 
   async delete<T>(endpoint: string, config?: RequestConfig): Promise<T> {
-    this.invalidateCache()
+    this.invalidateCache(this.getResource(endpoint))
     return this.request<T>(endpoint, { ...config, method: 'DELETE' })
   }
 }

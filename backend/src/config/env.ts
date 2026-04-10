@@ -28,6 +28,8 @@ export const env = {
 
   FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:3000',
 
+  REDIS_URL: process.env.REDIS_URL || 'redis://localhost:6379',
+
   UPLOAD_DIR: process.env.UPLOAD_DIR || './uploads',
   MAX_FILE_SIZE: Number(process.env.MAX_FILE_SIZE) || 5 * 1024 * 1024,
 

@@ -6,9 +6,10 @@ function makeQueryClient() {
   return new QueryClient({
     defaultOptions: {
       queries: {
-        staleTime: 60 * 1000, // 60s
-        gcTime: 5 * 60 * 1000, // 5min
+        staleTime: 5 * 60 * 1000, // 5min — evita refetch desnecessário entre navegações
+        gcTime: 10 * 60 * 1000, // 10min — mantém cache por mais tempo
         refetchOnWindowFocus: false,
+        refetchOnMount: false, // dados prefetchados não são rebuscados ao montar
         retry: 1,
       },
     },

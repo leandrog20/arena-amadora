@@ -1,9 +1,8 @@
 'use client'
 
-import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { api } from '@/services/api'
 import { useToastStore } from '@/stores/toast-store'
+import { useCreateTournament } from '@/hooks/use-queries'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -39,7 +38,7 @@ const formatOptions = [
 export default function CreateTournamentPage() {
   const router = useRouter()
   const toast = useToastStore()
-  const [loading, setLoading] = useState(false)
+  const createMutation = useCreateTournament()
 
   const {
     register,
@@ -56,7 +55,6 @@ export default function CreateTournamentPage() {
   })
 
   async function onSubmit(data: FormData) {
-    setLoading(true)
     try {
       const body: Record<string, unknown> = {
         title: data.title,
@@ -72,13 +70,14 @@ export default function CreateTournamentPage() {
       if (data.endDate) body.endDate = new Date(data.endDate).toISOString()
       if (data.registrationEnd) body.registrationEnd = new Date(data.registrationEnd).toISOString()
 
-      const res = await api.post<{ data: { id: string } }>('/tournaments', body)
+      // Prefetch a rota de torneios enquanto a API processa
+      router.prefetch('/tournaments')
+
+      const res = await createMutation.mutateAsync(body)
       toast.success('Torneio criado com sucesso!')
       router.push(`/tournaments/${res.data.id}`)
     } catch (err: any) {
       toast.error(err?.message || 'Erro ao criar torneio')
-    } finally {
-      setLoading(false)
     }
   }
 
@@ -202,7 +201,7 @@ export default function CreateTournamentPage() {
                 />
               </div>
 
-              <Button type="submit" variant="gaming" className="w-full" isLoading={loading}>
+              <Button type="submit" variant="gaming" className="w-full" isLoading={createMutation.isPending}>
                 <Trophy className="h-4 w-4 mr-2" />
                 Criar Torneio
               </Button>

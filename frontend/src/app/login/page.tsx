@@ -8,6 +8,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useAuthStore } from '@/stores/auth-store'
 import { useToastStore } from '@/stores/toast-store'
+import { usePrefetch } from '@/hooks/use-prefetch'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -25,6 +26,7 @@ export default function LoginPage() {
   const router = useRouter()
   const { login } = useAuthStore()
   const toast = useToastStore()
+  const { prefetchAfterLogin } = usePrefetch()
   const [isLoading, setIsLoading] = useState(false)
 
   const {
@@ -39,6 +41,8 @@ export default function LoginPage() {
     setIsLoading(true)
     try {
       await login(data.email, data.password)
+      // Prefetch rotas + dados críticos enquanto o toast aparece
+      prefetchAfterLogin()
       toast.success('Bem-vindo de volta!', 'Login realizado com sucesso')
       router.push('/dashboard')
     } catch (error: any) {

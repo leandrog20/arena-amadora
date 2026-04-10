@@ -1,6 +1,8 @@
 import { Decimal } from '@prisma/client/runtime/library'
+import { Prisma } from '@prisma/client'
 import { prisma } from '../../config/prisma'
 import { env } from '../../config/env'
+import { cached } from '../../config/redis'
 import {
   NotFoundError,
   ConflictError,
@@ -76,68 +78,89 @@ export class TournamentService {
     })
   }
 
-  async getById(id: string) {
+  async getById(id: string, userId?: string) {
     const tournament = await prisma.tournament.findUnique({
       where: { id },
       include: {
         createdBy: {
           select: { id: true, username: true, displayName: true, avatarUrl: true },
         },
-        participants: {
-          include: {
-            user: {
-              select: { id: true, username: true, displayName: true, avatarUrl: true, eloRating: true },
-            },
-          },
-          orderBy: { seed: 'asc' },
-        },
-        matches: {
-          include: {
-            player1: { select: { id: true, username: true, avatarUrl: true } },
-            player2: { select: { id: true, username: true, avatarUrl: true } },
-            winner: { select: { id: true, username: true } },
-          },
-          orderBy: [{ round: 'asc' }, { position: 'asc' }],
-        },
         _count: { select: { participants: true, matches: true } },
       },
     })
 
     if (!tournament) throw new NotFoundError('Torneio não encontrado')
-    return tournament
+
+    // Check rápido se o usuário está inscrito (1 query simples por PK)
+    let isParticipant = false
+    if (userId) {
+      const participant = await prisma.participant.findUnique({
+        where: { userId_tournamentId: { userId, tournamentId: id } },
+        select: { id: true },
+      })
+      isParticipant = !!participant
+    }
+
+    return { ...tournament, isParticipant }
+  }
+
+  async getParticipants(tournamentId: string) {
+    const tournament = await prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      select: { id: true },
+    })
+    if (!tournament) throw new NotFoundError('Torneio não encontrado')
+
+    return prisma.participant.findMany({
+      where: { tournamentId },
+      include: {
+        user: {
+          select: { id: true, username: true, displayName: true, avatarUrl: true, eloRating: true },
+        },
+      },
+      orderBy: { seed: 'asc' },
+    })
   }
 
   async list(params: ListTournamentsInput) {
     const { page, limit, status, game, search, sortBy, order } = params
-    const skip = (page - 1) * limit
 
-    const where: Record<string, unknown> = {}
-    if (status) where.status = status
-    if (game) where.game = game
-    if (search) {
-      where.OR = [
-        { title: { contains: search, mode: 'insensitive' } },
-        { description: { contains: search, mode: 'insensitive' } },
-      ]
-    }
+    // Torneios COMPLETED/CANCELLED mudam raramente — cache longo (5min)
+    // Listagens ativas: cache curto (15s) para não mostrar dados muito stale
+    const ttl = (status === 'COMPLETED' || status === 'CANCELLED') ? 300 : 15
+    const cacheKey = `tournaments:list:${page}:${limit}:${status || ''}:${game || ''}:${search || ''}:${sortBy}:${order}`
 
-    const [tournaments, total] = await Promise.all([
-      prisma.tournament.findMany({
-        where,
-        include: {
-          createdBy: {
-            select: { username: true, displayName: true },
+    return cached(cacheKey, ttl, async () => {
+      const skip = (page - 1) * limit
+
+      const where: Record<string, unknown> = {}
+      if (status) where.status = status
+      if (game) where.game = game
+      if (search) {
+        where.OR = [
+          { title: { contains: search, mode: 'insensitive' } },
+          { description: { contains: search, mode: 'insensitive' } },
+        ]
+      }
+
+      const [tournaments, total] = await Promise.all([
+        prisma.tournament.findMany({
+          where,
+          include: {
+            createdBy: {
+              select: { username: true, displayName: true },
+            },
+            _count: { select: { participants: true } },
           },
-          _count: { select: { participants: true } },
-        },
-        orderBy: { [sortBy]: order },
-        skip,
-        take: limit,
-      }),
-      prisma.tournament.count({ where }),
-    ])
+          orderBy: { [sortBy]: order },
+          skip,
+          take: limit,
+        }),
+        prisma.tournament.count({ where }),
+      ])
 
-    return { tournaments, total, page, limit }
+      return { tournaments, total, page, limit }
+    })
   }
 
   async join(tournamentId: string, userId: string) {
@@ -333,15 +356,18 @@ export class TournamentService {
       : 0
 
     await prisma.$transaction(async (tx) => {
-      // Atualizar seeds em paralelo (batch)
-      await Promise.all(
-        sortedParticipants.map((p, i) =>
-          tx.participant.update({
-            where: { id: p.id },
-            data: { seed: i + 1 },
-          })
+      // Atualizar todos os seeds em uma única query SQL (elimina N+1)
+      if (sortedParticipants.length > 0) {
+        const cases = sortedParticipants.map(
+          (p, i) => Prisma.sql`WHEN id = ${p.id} THEN ${i + 1}`
         )
-      )
+        const ids = sortedParticipants.map((p) => p.id)
+        await tx.$executeRaw`
+          UPDATE "participants"
+          SET seed = CASE ${Prisma.join(cases, ' ')} END
+          WHERE id IN (${Prisma.join(ids)})
+        `
+      }
 
       // Criar partidas + atualizar torneio em paralelo
       await Promise.all([
@@ -357,7 +383,7 @@ export class TournamentService {
       ])
     })
 
-    return this.getById(tournamentId)
+    return { id: tournamentId, status: 'IN_PROGRESS' as const, totalRounds }
   }
 
   private generateBracket(

@@ -8,6 +8,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useAuthStore } from '@/stores/auth-store'
 import { useToastStore } from '@/stores/toast-store'
+import { usePrefetch } from '@/hooks/use-prefetch'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -41,6 +42,7 @@ export default function RegisterPage() {
   const router = useRouter()
   const { register: registerUser } = useAuthStore()
   const toast = useToastStore()
+  const { prefetchAfterLogin } = usePrefetch()
   const [isLoading, setIsLoading] = useState(false)
 
   const {
@@ -60,6 +62,7 @@ export default function RegisterPage() {
         password: data.password,
         displayName: data.displayName,
       })
+      prefetchAfterLogin()
       toast.success('Conta criada!', 'Bem-vindo à Arena Amadora')
       router.push('/dashboard')
     } catch (error: any) {

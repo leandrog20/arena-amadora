@@ -1,13 +1,14 @@
 import { FastifyInstance } from 'fastify'
 import { TournamentController } from './tournament.controller'
-import { authMiddleware, requireRole } from '../../common/middlewares'
+import { authMiddleware, optionalAuth, requireRole } from '../../common/middlewares'
 
 const controller = new TournamentController()
 
 export async function tournamentRoutes(app: FastifyInstance) {
   // Rotas públicas
   app.get('/', controller.list)
-  app.get('/:id', controller.getById)
+  app.get('/:id', { preHandler: [optionalAuth] }, controller.getById)
+  app.get('/:id/participants', controller.getParticipants)
 
   // Rotas autenticadas
   app.post('/', { preHandler: [authMiddleware, requireRole('ADMIN', 'MODERATOR')] }, controller.create)

@@ -8,6 +8,7 @@ import { Tournament, Match, Participant } from '@/types'
 import {
   useTournament,
   useTournamentMatches,
+  useTournamentParticipants,
   useJoinTournament,
   useLeaveTournament,
   useStartTournament,
@@ -60,16 +61,20 @@ export default function TournamentDetailPage() {
 
   const tournament = tRes?.data || null
   const matches = mRes?.data || []
-  const loading = tLoading || mLoading
 
   const [tab, setTab] = useState<'info' | 'bracket' | 'participants'>('info')
+
+  // Participants carregam separadamente — só busca quando a aba é aberta
+  const { data: pRes, isLoading: pLoading } = useTournamentParticipants(id, tab === 'participants')
+  const participants = pRes?.data || []
 
   const joinMutation = useJoinTournament()
   const leaveMutation = useLeaveTournament()
   const startMutation = useStartTournament()
   const actionLoading = joinMutation.isPending || leaveMutation.isPending || startMutation.isPending
 
-  const isParticipant = tournament?.participants?.some((p) => p.userId === user?.id)
+  // isParticipant vem do backend (check rápido por PK)
+  const isParticipant = (tournament as any)?.isParticipant === true
   const isCreatorOrAdmin = user?.role === 'ADMIN' || tournament?.createdById === user?.id
 
   async function handleJoin() {
@@ -100,7 +105,7 @@ export default function TournamentDetailPage() {
     }
   }
 
-  if (loading) {
+  if (tLoading) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-8 w-48" />
@@ -186,7 +191,7 @@ export default function TournamentDetailPage() {
                 <Users className="h-5 w-5 mx-auto text-muted-foreground mb-1" />
                 <p className="text-sm text-muted-foreground">Participantes</p>
                 <p className="font-semibold">
-                  {tournament._count?.participants || tournament.participants?.length || 0}/{tournament.maxParticipants}
+                  {tournament._count?.participants || 0}/{tournament.maxParticipants}
                 </p>
               </div>
               <div className="text-center">
@@ -245,7 +250,13 @@ export default function TournamentDetailPage() {
 
       {tab === 'bracket' && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
-          {rounds.length === 0 ? (
+          {mLoading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {[...Array(4)].map((_, i) => (
+                <Skeleton key={i} className="h-40" />
+              ))}
+            </div>
+          ) : rounds.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center">
                 <Swords className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
@@ -333,14 +344,28 @@ export default function TournamentDetailPage() {
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
           <Card>
             <CardContent className="p-0">
-              {!tournament.participants || tournament.participants.length === 0 ? (
+              {pLoading ? (
+                <div className="space-y-0">
+                  {[...Array(5)].map((_, i) => (
+                    <div key={i} className="flex items-center gap-3 p-4 border-b border-border last:border-0">
+                      <Skeleton className="h-4 w-6" />
+                      <Skeleton className="h-8 w-8 rounded-full" />
+                      <div className="flex-1 space-y-1">
+                        <Skeleton className="h-4 w-32" />
+                        <Skeleton className="h-3 w-16" />
+                      </div>
+                      <Skeleton className="h-5 w-16" />
+                    </div>
+                  ))}
+                </div>
+              ) : participants.length === 0 ? (
                 <div className="py-12 text-center">
                   <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                   <p className="text-muted-foreground">Nenhum participante inscrito</p>
                 </div>
               ) : (
                 <div className="divide-y divide-border">
-                  {tournament.participants.map((p, i) => (
+                  {participants.map((p, i) => (
                     <div key={p.id} className="flex items-center justify-between p-4">
                       <div className="flex items-center gap-3">
                         <span className="text-sm text-muted-foreground w-6">#{i + 1}</span>
@@ -349,11 +374,11 @@ export default function TournamentDetailPage() {
                         </div>
                         <div>
                           <p className="font-medium">{p.user?.displayName || p.user?.username}</p>
-                          <p className="text-xs text-muted-foreground">ELO: {p.seed || '-'}</p>
+                          <p className="text-xs text-muted-foreground">ELO: {p.user?.eloRating || '-'}</p>
                         </div>
                       </div>
-                      <Badge variant={p.status === 'ELIMINATED' ? 'destructive' : p.status === 'WINNER' ? 'success' : 'secondary'}>
-                        {p.status === 'ELIMINATED' ? 'Eliminado' : p.status === 'WINNER' ? 'Campeão' : 'Ativo'}
+                      <Badge variant={p.isEliminated ? 'destructive' : 'secondary'}>
+                        {p.isEliminated ? 'Eliminado' : 'Ativo'}
                       </Badge>
                     </div>
                   ))}

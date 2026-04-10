@@ -1,7 +1,10 @@
 'use client'
 
-import { useEffect, useState, useMemo, useRef } from 'react'
-import { useTournaments } from '@/hooks/use-queries'
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
+import { useTournaments, queryKeys } from '@/hooks/use-queries'
+import { api } from '@/services/api'
 import { Tournament } from '@/types'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -61,9 +64,38 @@ export default function TournamentsPage() {
   }, [page, debouncedSearch, statusFilter])
 
   const { data: res, isLoading: loading } = useTournaments(queryParams)
+  const qc = useQueryClient()
+  const router = useRouter()
+
+  const handleCardHover = useCallback((id: string) => {
+    qc.prefetchQuery({
+      queryKey: queryKeys.tournaments.detail(id),
+      queryFn: () => api.get<{ data: Tournament }>(`/tournaments/${id}`),
+      staleTime: 60_000,
+    })
+    router.prefetch(`/tournaments/${id}`)
+  }, [qc, router])
 
   const tournaments = res?.data || []
   const totalPages = res?.pagination?.totalPages || 1
+
+  // Prefetch da próxima página para paginação instantânea
+  useEffect(() => {
+    if (page < totalPages) {
+      const nextParams = new URLSearchParams()
+      nextParams.append('page', String(page + 1))
+      nextParams.append('limit', '12')
+      if (debouncedSearch) nextParams.append('search', debouncedSearch)
+      if (statusFilter) nextParams.append('status', statusFilter)
+      const next = nextParams.toString()
+
+      qc.prefetchQuery({
+        queryKey: queryKeys.tournaments.list(next),
+        queryFn: () => api.get(`/tournaments?${next}`),
+        staleTime: 60_000,
+      })
+    }
+  }, [page, totalPages, debouncedSearch, statusFilter, qc])
 
   useEffect(() => {
     setPage(1)
@@ -152,14 +184,15 @@ export default function TournamentsPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {tournaments.map((t, i) => (
-            <motion.div
-              key={t.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.05 }}
-            >
+        <motion.div
+          key={queryParams}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.2 }}
+          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+        >
+          {tournaments.map((t) => (
+            <div key={t.id} onMouseEnter={() => handleCardHover(t.id)}>
               <Link href={`/tournaments/${t.id}`}>
                 <Card className="h-full hover:border-primary/30 transition-all hover:shadow-lg hover:shadow-primary/5 cursor-pointer">
                   <CardContent className="p-6 flex flex-col h-full">
@@ -218,9 +251,9 @@ export default function TournamentsPage() {
                   </CardContent>
                 </Card>
               </Link>
-            </motion.div>
+            </div>
           ))}
-        </div>
+        </motion.div>
       )}
 
       {/* Pagination */}

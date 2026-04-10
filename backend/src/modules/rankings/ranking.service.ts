@@ -1,103 +1,109 @@
 import { prisma } from '../../config/prisma'
+import { cached } from '../../config/redis'
 
 export class RankingService {
   async getGlobalRanking(page = 1, limit = 50) {
-    const skip = (page - 1) * limit
+    return cached(`ranking:global:${page}:${limit}`, 30, async () => {
+      const skip = (page - 1) * limit
 
-    const [players, total] = await Promise.all([
-      prisma.user.findMany({
-        where: { isBanned: false, gamesPlayed: { gt: 0 } },
-        select: {
-          id: true,
-          username: true,
-          displayName: true,
-          avatarUrl: true,
-          eloRating: true,
-          level: true,
-          gamesPlayed: true,
-          gamesWon: true,
-          bestWinStreak: true,
-        },
-        orderBy: { eloRating: 'desc' },
-        skip,
-        take: limit,
-      }),
-      prisma.user.count({
-        where: { isBanned: false, gamesPlayed: { gt: 0 } },
-      }),
-    ])
+      const [players, total] = await Promise.all([
+        prisma.user.findMany({
+          where: { isBanned: false, gamesPlayed: { gt: 0 } },
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            avatarUrl: true,
+            eloRating: true,
+            level: true,
+            gamesPlayed: true,
+            gamesWon: true,
+            bestWinStreak: true,
+          },
+          orderBy: { eloRating: 'desc' },
+          skip,
+          take: limit,
+        }),
+        prisma.user.count({
+          where: { isBanned: false, gamesPlayed: { gt: 0 } },
+        }),
+      ])
 
-    const ranked = players.map((p, i) => ({
-      rank: skip + i + 1,
-      ...p,
-      winRate: p.gamesPlayed > 0 ? Math.round((p.gamesWon / p.gamesPlayed) * 100) : 0,
-    }))
+      const ranked = players.map((p, i) => ({
+        rank: skip + i + 1,
+        ...p,
+        winRate: p.gamesPlayed > 0 ? Math.round((p.gamesWon / p.gamesPlayed) * 100) : 0,
+      }))
 
-    return { players: ranked, total, page, limit }
+      return { players: ranked, total, page, limit }
+    })
   }
 
   async getGameRanking(game: string, page = 1, limit = 50) {
-    const skip = (page - 1) * limit
+    return cached(`ranking:game:${game}:${page}:${limit}`, 30, async () => {
+      const skip = (page - 1) * limit
 
-    // Jogadores que participaram de torneios deste jogo
-    const participants = await prisma.participant.findMany({
-      where: {
-        tournament: { game },
-      },
-      select: { userId: true },
-      distinct: ['userId'],
-    })
-
-    const userIds = participants.map((p) => p.userId)
-
-    const [players, total] = await Promise.all([
-      prisma.user.findMany({
-        where: { id: { in: userIds }, isBanned: false },
-        select: {
-          id: true,
-          username: true,
-          displayName: true,
-          avatarUrl: true,
-          eloRating: true,
-          level: true,
-          gamesPlayed: true,
-          gamesWon: true,
+      const participants = await prisma.participant.findMany({
+        where: {
+          tournament: { game },
         },
-        orderBy: { eloRating: 'desc' },
-        skip,
-        take: limit,
-      }),
-      prisma.user.count({
-        where: { id: { in: userIds }, isBanned: false },
-      }),
-    ])
+        select: { userId: true },
+        distinct: ['userId'],
+      })
 
-    const ranked = players.map((p, i) => ({
-      rank: skip + i + 1,
-      ...p,
-    }))
+      const userIds = participants.map((p) => p.userId)
 
-    return { players: ranked, total, page, limit }
+      const [players, total] = await Promise.all([
+        prisma.user.findMany({
+          where: { id: { in: userIds }, isBanned: false },
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            avatarUrl: true,
+            eloRating: true,
+            level: true,
+            gamesPlayed: true,
+            gamesWon: true,
+          },
+          orderBy: { eloRating: 'desc' },
+          skip,
+          take: limit,
+        }),
+        prisma.user.count({
+          where: { id: { in: userIds }, isBanned: false },
+        }),
+      ])
+
+      const ranked = players.map((p, i) => ({
+        rank: skip + i + 1,
+        ...p,
+      }))
+
+      return { players: ranked, total, page, limit }
+    })
   }
 
   async getTeamRanking(page = 1, limit = 50) {
-    const skip = (page - 1) * limit
+    return cached(`ranking:teams:${page}:${limit}`, 30, async () => {
+      const skip = (page - 1) * limit
 
-    const [teams, total] = await Promise.all([
-      prisma.team.findMany({
-        include: { _count: { select: { members: true } } },
-        orderBy: { eloRating: 'desc' },
-        skip,
-        take: limit,
-      }),
-      prisma.team.count(),
-    ])
+      const [teams, total] = await Promise.all([
+        prisma.team.findMany({
+          include: { _count: { select: { members: true } } },
+          orderBy: { eloRating: 'desc' },
+          skip,
+          take: limit,
+        }),
+        prisma.team.count(),
+      ])
 
-    const ranked = teams.map((t, i) => ({
-      rank: skip + i + 1,
-      ...t,
-    }))
+      const ranked = teams.map((t, i) => ({
+        rank: skip + i + 1,
+        ...t,
+      }))
 
-    return { teams: ranked, total, page, limit }
+      return { teams: ranked, total, page, limit }
+    })
   }
 }

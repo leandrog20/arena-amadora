@@ -2,6 +2,7 @@ import { prisma } from '../../config/prisma'
 import { NotFoundError, AppError, ForbiddenError } from '../../common/errors'
 import { SubmitResultInput } from './match.schemas'
 import { calculateElo } from '../../common/utils'
+import { invalidateCache } from '../../config/redis'
 
 export class MatchService {
   async getById(matchId: string) {
@@ -198,6 +199,10 @@ export class MatchService {
         }
       }
     })
+
+    // Invalidar caches afetados (fire-and-forget)
+    invalidateCache('ranking:*')
+    invalidateCache('tournaments:*')
 
     return this.getById(matchId)
   }

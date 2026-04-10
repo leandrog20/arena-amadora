@@ -1,7 +1,9 @@
 'use client'
 
+import { useEffect } from 'react'
 import { useAuthStore } from '@/stores/auth-store'
 import { useUserStats, useWalletBalance } from '@/hooks/use-queries'
+import { usePrefetch } from '@/hooks/use-prefetch'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -23,6 +25,12 @@ export default function DashboardPage() {
   const { user } = useAuthStore()
   const { data: statsRes, isLoading: statsLoading } = useUserStats()
   const { data: walletRes, isLoading: walletLoading } = useWalletBalance()
+  const { prefetchFromDashboard } = usePrefetch()
+
+  // Prefetch rotas e dados de páginas secundárias ao montar o dashboard
+  useEffect(() => {
+    prefetchFromDashboard()
+  }, [prefetchFromDashboard])
 
   const stats = statsRes?.data
   const wallet = walletRes?.data
