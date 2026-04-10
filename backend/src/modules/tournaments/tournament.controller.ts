@@ -1,0 +1,55 @@
+import { FastifyReply, FastifyRequest } from 'fastify'
+import { TournamentService } from './tournament.service'
+import {
+  createTournamentSchema,
+  updateTournamentSchema,
+  listTournamentsSchema,
+} from './tournament.schemas'
+import { sendSuccess, sendPaginated } from '../../common/utils'
+
+const tournamentService = new TournamentService()
+
+export class TournamentController {
+  async create(request: FastifyRequest, reply: FastifyReply) {
+    const data = createTournamentSchema.parse(request.body)
+    const result = await tournamentService.create(data, request.userId)
+    return sendSuccess(reply, result, 201)
+  }
+
+  async update(request: FastifyRequest, reply: FastifyReply) {
+    const { id } = request.params as { id: string }
+    const data = updateTournamentSchema.parse(request.body)
+    const result = await tournamentService.update(id, data, request.userId, request.userRole)
+    return sendSuccess(reply, result)
+  }
+
+  async getById(request: FastifyRequest, reply: FastifyReply) {
+    const { id } = request.params as { id: string }
+    const result = await tournamentService.getById(id)
+    return sendSuccess(reply, result)
+  }
+
+  async list(request: FastifyRequest, reply: FastifyReply) {
+    const params = listTournamentsSchema.parse(request.query)
+    const { tournaments, total, page, limit } = await tournamentService.list(params)
+    return sendPaginated(reply, tournaments, total, page, limit)
+  }
+
+  async join(request: FastifyRequest, reply: FastifyReply) {
+    const { id } = request.params as { id: string }
+    const result = await tournamentService.join(id, request.userId)
+    return sendSuccess(reply, result, 201)
+  }
+
+  async leave(request: FastifyRequest, reply: FastifyReply) {
+    const { id } = request.params as { id: string }
+    await tournamentService.leave(id, request.userId)
+    return sendSuccess(reply, { message: 'Saiu do torneio com sucesso' })
+  }
+
+  async start(request: FastifyRequest, reply: FastifyReply) {
+    const { id } = request.params as { id: string }
+    const result = await tournamentService.startTournament(id, request.userId, request.userRole)
+    return sendSuccess(reply, result)
+  }
+}
