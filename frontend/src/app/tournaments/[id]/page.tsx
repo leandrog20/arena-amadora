@@ -1,11 +1,17 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { api } from '@/services/api'
 import { useAuthStore } from '@/stores/auth-store'
 import { useToastStore } from '@/stores/toast-store'
 import { Tournament, Match, Participant } from '@/types'
+import {
+  useTournament,
+  useTournamentMatches,
+  useJoinTournament,
+  useLeaveTournament,
+  useStartTournament,
+} from '@/hooks/use-queries'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -49,78 +55,48 @@ export default function TournamentDetailPage() {
   const toast = useToastStore()
   const id = params.id as string
 
-  const [tournament, setTournament] = useState<Tournament | null>(null)
-  const [matches, setMatches] = useState<Match[]>([])
-  const [loading, setLoading] = useState(true)
-  const [actionLoading, setActionLoading] = useState(false)
+  const { data: tRes, isLoading: tLoading } = useTournament(id)
+  const { data: mRes, isLoading: mLoading } = useTournamentMatches(id)
+
+  const tournament = tRes?.data || null
+  const matches = mRes?.data || []
+  const loading = tLoading || mLoading
+
   const [tab, setTab] = useState<'info' | 'bracket' | 'participants'>('info')
+
+  const joinMutation = useJoinTournament()
+  const leaveMutation = useLeaveTournament()
+  const startMutation = useStartTournament()
+  const actionLoading = joinMutation.isPending || leaveMutation.isPending || startMutation.isPending
 
   const isParticipant = tournament?.participants?.some((p) => p.userId === user?.id)
   const isCreatorOrAdmin = user?.role === 'ADMIN' || tournament?.createdById === user?.id
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const [tRes, mRes] = await Promise.allSettled([
-          api.get<{ data: Tournament }>(`/tournaments/${id}`),
-          api.get<{ data: Match[] }>(`/matches/tournament/${id}`),
-        ])
-        if (tRes.status === 'fulfilled') setTournament(tRes.value.data)
-        if (mRes.status === 'fulfilled') setMatches(mRes.value.data || [])
-      } catch {
-        //
-      } finally {
-        setLoading(false)
-      }
-    }
-    load()
-  }, [id])
-
   async function handleJoin() {
-    setActionLoading(true)
     try {
-      await api.post(`/tournaments/${id}/join`)
+      await joinMutation.mutateAsync(id)
       toast.success('Inscrição realizada com sucesso!')
-      const res = await api.get<{ data: Tournament }>(`/tournaments/${id}`)
-      setTournament(res.data)
     } catch (err: any) {
       toast.error(err?.message || 'Erro ao se inscrever')
-    } finally {
-      setActionLoading(false)
     }
   }
 
   async function handleLeave() {
-    setActionLoading(true)
     try {
-      await api.post(`/tournaments/${id}/leave`)
+      await leaveMutation.mutateAsync(id)
       toast.success('Inscrição cancelada')
-      const res = await api.get<{ data: Tournament }>(`/tournaments/${id}`)
-      setTournament(res.data)
     } catch (err: any) {
       toast.error(err?.message || 'Erro ao cancelar inscrição')
-    } finally {
-      setActionLoading(false)
     }
   }
 
   async function handleStart() {
-    setActionLoading(true)
     try {
-      await api.post(`/tournaments/${id}/start`)
+      await startMutation.mutateAsync(id)
       toast.success('Torneio iniciado! Chaveamento gerado.')
-      // Recarrega torneio e partidas
-      const [tRes, mRes] = await Promise.allSettled([
-        api.get<{ data: Tournament }>(`/tournaments/${id}`),
-        api.get<{ data: Match[] }>(`/matches/tournament/${id}`),
-      ])
-      if (tRes.status === 'fulfilled') setTournament(tRes.value.data)
-      if (mRes.status === 'fulfilled') setMatches(mRes.value.data || [])
       setTab('bracket')
     } catch (err: any) {
       toast.error(err?.message || 'Erro ao iniciar torneio')
-    } finally {
-      setActionLoading(false)
     }
   }
 

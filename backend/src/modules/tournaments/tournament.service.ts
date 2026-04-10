@@ -43,7 +43,10 @@ export class TournamentService {
   }
 
   async update(id: string, data: UpdateTournamentInput, userId: string, userRole: string) {
-    const tournament = await prisma.tournament.findUnique({ where: { id } })
+    const tournament = await prisma.tournament.findUnique({
+      where: { id },
+      select: { id: true, createdById: true, status: true },
+    })
     if (!tournament) throw new NotFoundError('Torneio não encontrado')
 
     if (tournament.createdById !== userId && userRole !== 'ADMIN') {
@@ -221,18 +224,22 @@ export class TournamentService {
   }
 
   async leave(tournamentId: string, userId: string) {
-    const tournament = await prisma.tournament.findUnique({
-      where: { id: tournamentId },
-    })
+    const [tournament, participant] = await Promise.all([
+      prisma.tournament.findUnique({
+        where: { id: tournamentId },
+        select: { id: true, title: true, status: true, entryFee: true, feePercentage: true },
+      }),
+      prisma.participant.findUnique({
+        where: { userId_tournamentId: { userId, tournamentId } },
+      }),
+    ])
+
     if (!tournament) throw new NotFoundError('Torneio não encontrado')
 
     if (tournament.status !== 'REGISTRATION') {
       throw new AppError('Não é possível sair de um torneio em andamento')
     }
 
-    const participant = await prisma.participant.findUnique({
-      where: { userId_tournamentId: { userId, tournamentId } },
-    })
     if (!participant) throw new NotFoundError('Você não está inscrito neste torneio')
 
     const entryFee = Number(tournament.entryFee)
@@ -326,26 +333,28 @@ export class TournamentService {
       : 0
 
     await prisma.$transaction(async (tx) => {
-      // Atualizar seeds
-      for (let i = 0; i < sortedParticipants.length; i++) {
-        await tx.participant.update({
-          where: { id: sortedParticipants[i].id },
-          data: { seed: i + 1 },
-        })
-      }
+      // Atualizar seeds em paralelo (batch)
+      await Promise.all(
+        sortedParticipants.map((p, i) =>
+          tx.participant.update({
+            where: { id: p.id },
+            data: { seed: i + 1 },
+          })
+        )
+      )
 
-      // Criar partidas
-      await tx.match.createMany({ data: matches })
-
-      // Atualizar torneio
-      await tx.tournament.update({
-        where: { id: tournamentId },
-        data: {
-          status: 'IN_PROGRESS',
-          currentRound: 1,
-          totalRounds,
-        },
-      })
+      // Criar partidas + atualizar torneio em paralelo
+      await Promise.all([
+        tx.match.createMany({ data: matches }),
+        tx.tournament.update({
+          where: { id: tournamentId },
+          data: {
+            status: 'IN_PROGRESS',
+            currentRound: 1,
+            totalRounds,
+          },
+        }),
+      ])
     })
 
     return this.getById(tournamentId)

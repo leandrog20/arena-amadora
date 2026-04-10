@@ -1,7 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { api } from '@/services/api'
+import { useNotifications, useMarkAllRead, useMarkRead } from '@/hooks/use-queries'
 import { Notification } from '@/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -10,42 +9,18 @@ import { motion } from 'framer-motion'
 import { Bell, Check, CheckCheck } from 'lucide-react'
 
 export default function NotificationsPage() {
-  const [notifications, setNotifications] = useState<Notification[]>([])
-  const [loading, setLoading] = useState(true)
+  const { data: res, isLoading: loading } = useNotifications()
+  const markAllReadMutation = useMarkAllRead()
+  const markReadMutation = useMarkRead()
 
-  async function load() {
-    try {
-      const res = await api.get<{ data: { notifications: Notification[] } }>('/notifications')
-      setNotifications(res.data.notifications || [])
-    } catch {
-      //
-    } finally {
-      setLoading(false)
-    }
+  const notifications: Notification[] = res?.data?.notifications || []
+
+  function markAllRead() {
+    markAllReadMutation.mutate()
   }
 
-  useEffect(() => {
-    load()
-  }, [])
-
-  async function markAllRead() {
-    try {
-      await api.patch('/notifications/read-all')
-      setNotifications((prev) => prev.map((n) => ({ ...n, readAt: new Date().toISOString() })))
-    } catch {
-      //
-    }
-  }
-
-  async function markRead(id: string) {
-    try {
-      await api.patch(`/notifications/${id}/read`)
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === id ? { ...n, readAt: new Date().toISOString() } : n))
-      )
-    } catch {
-      //
-    }
+  function markRead(id: string) {
+    markReadMutation.mutate(id)
   }
 
   const unreadCount = notifications.filter((n) => !n.readAt).length

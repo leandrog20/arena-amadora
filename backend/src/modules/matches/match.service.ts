@@ -12,7 +12,7 @@ export class MatchService {
         player1: { select: { id: true, username: true, displayName: true, avatarUrl: true, eloRating: true } },
         player2: { select: { id: true, username: true, displayName: true, avatarUrl: true, eloRating: true } },
         winner: { select: { id: true, username: true } },
-        disputes: true,
+        disputes: { select: { id: true, status: true, reason: true, createdAt: true } },
       },
     })
 
@@ -36,7 +36,7 @@ export class MatchService {
     const match = await prisma.match.findUnique({
       where: { id: matchId },
       include: {
-        tournament: true,
+        tournament: { select: { id: true, title: true, format: true, prizePool: true } },
         player1: { select: { id: true, eloRating: true } },
         player2: { select: { id: true, eloRating: true } },
       },
@@ -76,7 +76,7 @@ export class MatchService {
         },
       })
 
-      // Atualizar ELO
+      // Atualizar ELO em paralelo
       if (match.player1 && match.player2) {
         const scoreA = data.winnerId === match.player1Id ? 1 : 0
         const { newRatingA, newRatingB } = calculateElo(
@@ -85,55 +85,50 @@ export class MatchService {
           scoreA
         )
 
-        await tx.user.update({
-          where: { id: match.player1Id! },
-          data: {
-            eloRating: newRatingA,
-            gamesPlayed: { increment: 1 },
-            ...(data.winnerId === match.player1Id
-              ? {
-                  gamesWon: { increment: 1 },
-                  winStreak: { increment: 1 },
-                  xp: { increment: 50 },
-                }
-              : {
-                  winStreak: 0,
-                  xp: { increment: 10 },
-                }),
-          },
-        })
-
-        await tx.user.update({
-          where: { id: match.player2Id! },
-          data: {
-            eloRating: newRatingB,
-            gamesPlayed: { increment: 1 },
-            ...(data.winnerId === match.player2Id
-              ? {
-                  gamesWon: { increment: 1 },
-                  winStreak: { increment: 1 },
-                  xp: { increment: 50 },
-                }
-              : {
-                  winStreak: 0,
-                  xp: { increment: 10 },
-                }),
-          },
-        })
+        await Promise.all([
+          tx.user.update({
+            where: { id: match.player1Id! },
+            data: {
+              eloRating: newRatingA,
+              gamesPlayed: { increment: 1 },
+              ...(data.winnerId === match.player1Id
+                ? {
+                    gamesWon: { increment: 1 },
+                    winStreak: { increment: 1 },
+                    xp: { increment: 50 },
+                  }
+                : {
+                    winStreak: 0,
+                    xp: { increment: 10 },
+                  }),
+            },
+          }),
+          tx.user.update({
+            where: { id: match.player2Id! },
+            data: {
+              eloRating: newRatingB,
+              gamesPlayed: { increment: 1 },
+              ...(data.winnerId === match.player2Id
+                ? {
+                    gamesWon: { increment: 1 },
+                    winStreak: { increment: 1 },
+                    xp: { increment: 50 },
+                  }
+                : {
+                    winStreak: 0,
+                    xp: { increment: 10 },
+                  }),
+            },
+          }),
+        ])
       }
 
-      // Atualizar bestWinStreak
+      // Atualizar bestWinStreak com raw SQL para evitar read-then-write
       if (data.winnerId) {
-        const winner = await tx.user.findUnique({
-          where: { id: data.winnerId },
-          select: { winStreak: true, bestWinStreak: true },
-        })
-        if (winner && winner.winStreak > winner.bestWinStreak) {
-          await tx.user.update({
-            where: { id: data.winnerId },
-            data: { bestWinStreak: winner.winStreak },
-          })
-        }
+        await tx.$executeRawUnsafe(
+          `UPDATE users SET best_win_streak = win_streak WHERE id = $1 AND win_streak > best_win_streak`,
+          data.winnerId
+        )
       }
 
       // Eliminar perdedor
@@ -210,63 +205,68 @@ export class MatchService {
   private async completeTournament(tx: any, tournamentId: string, winnerId: string) {
     const tournament = await tx.tournament.findUnique({
       where: { id: tournamentId },
+      select: { id: true, title: true, prizePool: true },
     })
 
     if (!tournament) return
 
-    // Distribuir prêmio
     const prizePool = Number(tournament.prizePool)
+
+    // Distribuir prêmio se houver
     if (prizePool > 0) {
-      const wallet = await tx.wallet.findUnique({ where: { userId: winnerId } })
+      const wallet = await tx.wallet.findUnique({
+        where: { userId: winnerId },
+        select: { id: true, balance: true },
+      })
       if (wallet) {
         const balance = Number(wallet.balance)
         const newBalance = balance + prizePool
 
-        await tx.wallet.update({
-          where: { userId: winnerId },
-          data: { balance: newBalance },
-        })
-
-        await tx.transaction.create({
-          data: {
-            walletId: wallet.id,
-            type: 'TOURNAMENT_PRIZE',
-            amount: prizePool,
-            balanceBefore: balance,
-            balanceAfter: newBalance,
-            status: 'COMPLETED',
-            description: `Prêmio do torneio: ${tournament.title}`,
-            referenceId: tournamentId,
-          },
-        })
+        await Promise.all([
+          tx.wallet.update({
+            where: { userId: winnerId },
+            data: { balance: newBalance },
+          }),
+          tx.transaction.create({
+            data: {
+              walletId: wallet.id,
+              type: 'TOURNAMENT_PRIZE',
+              amount: prizePool,
+              balanceBefore: balance,
+              balanceAfter: newBalance,
+              status: 'COMPLETED',
+              description: `Prêmio do torneio: ${tournament.title}`,
+              referenceId: tournamentId,
+            },
+          }),
+        ])
       }
     }
 
-    // Placement do vencedor
-    await tx.participant.updateMany({
-      where: { userId: winnerId, tournamentId },
-      data: { placement: 1 },
-    })
-
-    // XP bônus por vencer torneio
-    await tx.user.update({
-      where: { id: winnerId },
-      data: { xp: { increment: 200 } },
-    })
-
-    // Marcar torneio como completo
-    await tx.tournament.update({
-      where: { id: tournamentId },
-      data: {
-        status: 'COMPLETED',
-        endDate: new Date(),
-      },
-    })
+    // Placement + XP + status do torneio em paralelo
+    await Promise.all([
+      tx.participant.updateMany({
+        where: { userId: winnerId, tournamentId },
+        data: { placement: 1 },
+      }),
+      tx.user.update({
+        where: { id: winnerId },
+        data: { xp: { increment: 200 } },
+      }),
+      tx.tournament.update({
+        where: { id: tournamentId },
+        data: {
+          status: 'COMPLETED',
+          endDate: new Date(),
+        },
+      }),
+    ])
   }
 
   async uploadProof(matchId: string, proofUrl: string, userId: string) {
     const match = await prisma.match.findUnique({
       where: { id: matchId },
+      select: { id: true, player1Id: true, player2Id: true },
     })
 
     if (!match) throw new NotFoundError('Partida não encontrada')

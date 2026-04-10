@@ -122,6 +122,9 @@ model User {
   ipLogs              IpLog[]
   actionLogs          ActionLog[]
 
+  @@index([eloRating])
+  @@index([lastLoginAt])
+  @@index([isBanned, gamesPlayed])
   @@map("users")
 }
 
@@ -214,6 +217,8 @@ model Tournament {
   @@index([status])
   @@index([game])
   @@index([startDate])
+  @@index([status, game])
+  @@index([createdById])
   @@map("tournaments")
 }
 
@@ -234,6 +239,7 @@ model Participant {
 
   @@unique([userId, tournamentId])
   @@index([tournamentId])
+  @@index([userId])
   @@map("participants")
 }
 
@@ -263,8 +269,11 @@ model Match {
   disputes   Dispute[]
 
   @@index([tournamentId])
+  @@index([tournamentId, round, position])
   @@index([round])
   @@index([status])
+  @@index([player1Id, status])
+  @@index([player2Id, status])
   @@map("matches")
 }
 

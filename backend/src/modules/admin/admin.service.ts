@@ -40,19 +40,17 @@ export class AdminService {
       }),
     ])
 
-    // Receita dos últimos 30 dias
+    // Receita dos últimos 30 dias (agregação por dia via raw SQL)
     const thirtyDaysAgo = new Date()
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
 
-    const revenueByDay = await prisma.transaction.groupBy({
-      by: ['createdAt'],
-      where: {
-        type: 'PLATFORM_FEE',
-        status: 'COMPLETED',
-        createdAt: { gte: thirtyDaysAgo },
-      },
-      _sum: { amount: true },
-    })
+    const revenueByDay = await prisma.$queryRaw`
+      SELECT DATE(created_at) as date, SUM(amount) as total
+      FROM transactions
+      WHERE type = 'PLATFORM_FEE' AND status = 'COMPLETED' AND created_at >= ${thirtyDaysAgo}
+      GROUP BY DATE(created_at)
+      ORDER BY date DESC
+    `
 
     return {
       users: { total: totalUsers, activeToday: activeUsersToday },
@@ -67,27 +65,27 @@ export class AdminService {
   }
 
   async banUser(userId: string, reason: string) {
-    const user = await prisma.user.findUnique({ where: { id: userId } })
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    })
     if (!user) throw new NotFoundError('Usuário não encontrado')
 
     await prisma.$transaction(async (tx) => {
-      await tx.user.update({
-        where: { id: userId },
-        data: { isBanned: true, banReason: reason },
-      })
-
-      // Revogar todos os tokens
-      await tx.refreshToken.updateMany({
-        where: { userId },
-        data: { isRevoked: true },
-      })
+      await Promise.all([
+        tx.user.update({
+          where: { id: userId },
+          data: { isBanned: true, banReason: reason },
+        }),
+        tx.refreshToken.updateMany({
+          where: { userId },
+          data: { isRevoked: true },
+        }),
+      ])
     })
   }
 
   async unbanUser(userId: string) {
-    const user = await prisma.user.findUnique({ where: { id: userId } })
-    if (!user) throw new NotFoundError('Usuário não encontrado')
-
     await prisma.user.update({
       where: { id: userId },
       data: { isBanned: false, banReason: null },
@@ -95,9 +93,6 @@ export class AdminService {
   }
 
   async setUserRole(userId: string, role: 'USER' | 'ADMIN' | 'MODERATOR') {
-    const user = await prisma.user.findUnique({ where: { id: userId } })
-    if (!user) throw new NotFoundError('Usuário não encontrado')
-
     return prisma.user.update({
       where: { id: userId },
       data: { role },
@@ -162,20 +157,20 @@ export class AdminService {
   }
 
   async getPlatformStats() {
-    const totalPrizeDistributed = await prisma.transaction.aggregate({
-      where: { type: 'TOURNAMENT_PRIZE', status: 'COMPLETED' },
-      _sum: { amount: true },
-    })
-
-    const totalDeposits = await prisma.transaction.aggregate({
-      where: { type: 'DEPOSIT', status: 'COMPLETED' },
-      _sum: { amount: true },
-    })
-
-    const totalWithdrawals = await prisma.transaction.aggregate({
-      where: { type: 'WITHDRAWAL', status: 'COMPLETED' },
-      _sum: { amount: true },
-    })
+    const [totalPrizeDistributed, totalDeposits, totalWithdrawals] = await Promise.all([
+      prisma.transaction.aggregate({
+        where: { type: 'TOURNAMENT_PRIZE', status: 'COMPLETED' },
+        _sum: { amount: true },
+      }),
+      prisma.transaction.aggregate({
+        where: { type: 'DEPOSIT', status: 'COMPLETED' },
+        _sum: { amount: true },
+      }),
+      prisma.transaction.aggregate({
+        where: { type: 'WITHDRAWAL', status: 'COMPLETED' },
+        _sum: { amount: true },
+      }),
+    ])
 
     return {
       prizeDistributed: totalPrizeDistributed._sum.amount || 0,

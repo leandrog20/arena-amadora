@@ -86,7 +86,7 @@ class ApiClient {
       this.cache.clear()
       return
     }
-    for (const key of this.cache.keys()) {
+    for (const key of Array.from(this.cache.keys())) {
       if (key.includes(prefix)) this.cache.delete(key)
     }
   }

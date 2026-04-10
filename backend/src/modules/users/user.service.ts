@@ -186,33 +186,33 @@ export class UserService {
   }
 
   async getUserStats(userId: string) {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        gamesPlayed: true,
-        gamesWon: true,
-        eloRating: true,
-        xp: true,
-        level: true,
-        winStreak: true,
-        bestWinStreak: true,
-      },
-    })
+    const [user, tournamentsWon, totalEarnings] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          gamesPlayed: true,
+          gamesWon: true,
+          eloRating: true,
+          xp: true,
+          level: true,
+          winStreak: true,
+          bestWinStreak: true,
+        },
+      }),
+      prisma.participant.count({
+        where: { userId, placement: 1 },
+      }),
+      prisma.transaction.aggregate({
+        where: {
+          wallet: { userId },
+          type: 'TOURNAMENT_PRIZE',
+          status: 'COMPLETED',
+        },
+        _sum: { amount: true },
+      }),
+    ])
 
     if (!user) throw new NotFoundError('Usuário não encontrado')
-
-    const tournamentsWon = await prisma.participant.count({
-      where: { userId, placement: 1 },
-    })
-
-    const totalEarnings = await prisma.transaction.aggregate({
-      where: {
-        wallet: { userId },
-        type: 'TOURNAMENT_PRIZE',
-        status: 'COMPLETED',
-      },
-      _sum: { amount: true },
-    })
 
     return {
       ...user,

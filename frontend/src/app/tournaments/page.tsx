@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef } from 'react'
-import { api } from '@/services/api'
+import { useEffect, useState, useMemo, useRef } from 'react'
+import { useTournaments } from '@/hooks/use-queries'
 import { Tournament } from '@/types'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -39,13 +39,10 @@ const formatMap: Record<string, string> = {
 }
 
 export default function TournamentsPage() {
-  const [tournaments, setTournaments] = useState<Tournament[]>([])
-  const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('')
   const [page, setPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
   const debounceRef = useRef<ReturnType<typeof setTimeout>>()
 
   // Debounce search: espera 400ms antes de buscar
@@ -54,31 +51,19 @@ export default function TournamentsPage() {
     return () => clearTimeout(debounceRef.current)
   }, [search])
 
-  const fetchTournaments = useCallback(async (targetPage: number) => {
-    setLoading(true)
-    try {
-      const params = new URLSearchParams()
-      params.append('page', String(targetPage))
-      params.append('limit', '12')
-      if (debouncedSearch) params.append('search', debouncedSearch)
-      if (statusFilter) params.append('status', statusFilter)
+  const queryParams = useMemo(() => {
+    const params = new URLSearchParams()
+    params.append('page', String(page))
+    params.append('limit', '12')
+    if (debouncedSearch) params.append('search', debouncedSearch)
+    if (statusFilter) params.append('status', statusFilter)
+    return params.toString()
+  }, [page, debouncedSearch, statusFilter])
 
-      const res = await api.get<{
-        data: Tournament[]
-        pagination: { totalPages: number }
-      }>(`/tournaments?${params.toString()}`, { cacheTtl: 15_000 })
-      setTournaments(res.data)
-      setTotalPages(res.pagination?.totalPages || 1)
-    } catch {
-      //
-    } finally {
-      setLoading(false)
-    }
-  }, [debouncedSearch, statusFilter])
+  const { data: res, isLoading: loading } = useTournaments(queryParams)
 
-  useEffect(() => {
-    fetchTournaments(page)
-  }, [fetchTournaments, page])
+  const tournaments = res?.data || []
+  const totalPages = res?.pagination?.totalPages || 1
 
   useEffect(() => {
     setPage(1)

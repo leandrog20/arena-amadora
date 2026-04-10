@@ -1,7 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { api } from '@/services/api'
+import { useState } from 'react'
+import {
+  useWalletBalance,
+  useWalletTransactions,
+  useDeposit,
+  useWithdraw,
+} from '@/hooks/use-queries'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -19,52 +24,23 @@ import {
   ChevronRight,
 } from 'lucide-react'
 
-interface WalletData {
-  balance: number
-  frozenAmount: number
-}
-
-interface Transaction {
-  id: string
-  type: string
-  amount: number
-  description: string | null
-  status: string
-  createdAt: string
-}
-
 export default function WalletPage() {
   const toast = useToastStore()
-  const [wallet, setWallet] = useState<WalletData | null>(null)
-  const [transactions, setTransactions] = useState<Transaction[]>([])
-  const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
   const [tab, setTab] = useState<'deposit' | 'withdraw'>('deposit')
   const [amount, setAmount] = useState('')
-  const [actionLoading, setActionLoading] = useState(false)
 
-  async function loadData() {
-    try {
-      const [wRes, tRes] = await Promise.all([
-        api.get<{ data: WalletData }>('/wallet/balance'),
-        api.get<{ data: Transaction[]; pagination: { totalPages: number } }>(
-          `/wallet/transactions?page=${page}&limit=15`
-        ),
-      ])
-      setWallet(wRes.data)
-      setTransactions(tRes.data)
-      setTotalPages(tRes.pagination?.totalPages || 1)
-    } catch {
-      //
-    } finally {
-      setLoading(false)
-    }
-  }
+  const { data: wRes, isLoading: wLoading } = useWalletBalance()
+  const { data: tRes, isLoading: tLoading } = useWalletTransactions(page)
 
-  useEffect(() => {
-    loadData()
-  }, [page])
+  const wallet = wRes?.data || null
+  const transactions = tRes?.data || []
+  const totalPages = tRes?.pagination?.totalPages || 1
+  const loading = wLoading || tLoading
+
+  const depositMutation = useDeposit()
+  const withdrawMutation = useWithdraw()
+  const actionLoading = depositMutation.isPending || withdrawMutation.isPending
 
   async function handleAction() {
     const value = parseFloat(amount)
@@ -72,21 +48,17 @@ export default function WalletPage() {
       toast.error('Informe um valor válido')
       return
     }
-    setActionLoading(true)
     try {
       if (tab === 'deposit') {
-        await api.post('/wallet/deposit', { amount: value })
+        await depositMutation.mutateAsync(value)
         toast.success(`Depósito de R$ ${value.toFixed(2)} realizado!`)
       } else {
-        await api.post('/wallet/withdraw', { amount: value })
+        await withdrawMutation.mutateAsync(value)
         toast.success(`Saque de R$ ${value.toFixed(2)} solicitado!`)
       }
       setAmount('')
-      loadData()
     } catch (err: any) {
       toast.error(err?.message || 'Erro na operação')
-    } finally {
-      setActionLoading(false)
     }
   }
 

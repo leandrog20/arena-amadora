@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { api } from '@/services/api'
+import { useState } from 'react'
+import { useMyMatches } from '@/hooks/use-queries'
 import { Match } from '@/types'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -11,29 +11,11 @@ import { motion } from 'framer-motion'
 import { Swords, Crown, ChevronLeft, ChevronRight } from 'lucide-react'
 
 export default function MatchesPage() {
-  const [matches, setMatches] = useState<Match[]>([])
-  const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
+  const { data: res, isLoading: loading } = useMyMatches(page)
 
-  useEffect(() => {
-    async function load() {
-      setLoading(true)
-      try {
-        const res = await api.get<{
-          data: Match[]
-          pagination: { totalPages: number }
-        }>(`/users/me/matches?page=${page}&limit=20`)
-        setMatches(res.data)
-        setTotalPages(res.pagination?.totalPages || 1)
-      } catch {
-        //
-      } finally {
-        setLoading(false)
-      }
-    }
-    load()
-  }, [page])
+  const matches = res?.data || []
+  const totalPages = res?.pagination?.totalPages || 1
 
   return (
     <div className="space-y-6">

@@ -1,8 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import { useAuthStore } from '@/stores/auth-store'
-import { api } from '@/services/api'
+import { useUserStats, useWalletBalance } from '@/hooks/use-queries'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -20,47 +19,14 @@ import {
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 
-interface Stats {
-  gamesPlayed: number
-  gamesWon: number
-  eloRating: number
-  xp: number
-  level: number
-  winStreak: number
-  bestWinStreak: number
-  winRate: number
-  tournamentsWon: number
-  totalEarnings: number
-}
-
-interface WalletData {
-  balance: number
-  frozenAmount: number
-}
-
 export default function DashboardPage() {
   const { user } = useAuthStore()
-  const [stats, setStats] = useState<Stats | null>(null)
-  const [wallet, setWallet] = useState<WalletData | null>(null)
-  const [loading, setLoading] = useState(true)
+  const { data: statsRes, isLoading: statsLoading } = useUserStats()
+  const { data: walletRes, isLoading: walletLoading } = useWalletBalance()
 
-  useEffect(() => {
-    async function loadData() {
-      try {
-        const [statsRes, walletRes] = await Promise.all([
-          api.get<{ data: Stats }>('/users/me/stats'),
-          api.get<{ data: WalletData }>('/wallet/balance'),
-        ])
-        setStats(statsRes.data)
-        setWallet(walletRes.data)
-      } catch {
-        // silently fail
-      } finally {
-        setLoading(false)
-      }
-    }
-    loadData()
-  }, [])
+  const stats = statsRes?.data
+  const wallet = walletRes?.data
+  const loading = statsLoading || walletLoading
 
   if (loading) {
     return (
