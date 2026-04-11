@@ -12,4 +12,7 @@ export async function socialRoutes(app: FastifyInstance) {
   app.get('/friends', controller.getFriends)
   app.get('/friends/pending', controller.getPendingRequests)
   app.delete('/friends/:friendId', controller.removeFriend)
+  app.post('/block/:userId', controller.blockUser)
+  app.delete('/block/:userId', controller.unblockUser)
+  app.get('/blocked', controller.getBlockedUsers)
 }

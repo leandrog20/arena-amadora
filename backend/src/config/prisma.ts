@@ -4,6 +4,14 @@ const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
 }
 
+// Adiciona connection_limit à URL se não configurada
+function getDatabaseUrl() {
+  const url = process.env.DATABASE_URL || ''
+  if (url.includes('connection_limit')) return url
+  const separator = url.includes('?') ? '&' : '?'
+  return `${url}${separator}connection_limit=20&pool_timeout=30`
+}
+
 export const prisma =
   globalForPrisma.prisma ??
   new PrismaClient({
@@ -16,7 +24,7 @@ export const prisma =
         : ['error'],
     datasources: {
       db: {
-        url: process.env.DATABASE_URL,
+        url: getDatabaseUrl(),
       },
     },
   })

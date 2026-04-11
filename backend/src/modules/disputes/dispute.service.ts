@@ -1,6 +1,7 @@
 import { prisma } from '../../config/prisma'
 import { NotFoundError, AppError, ForbiddenError } from '../../common/errors'
 import { CreateDisputeInput, ResolveDisputeInput } from './dispute.schemas'
+import { notify } from '../../common/utils/notify'
 
 export class DisputeService {
   async create(data: CreateDisputeInput, userId: string) {
@@ -23,7 +24,7 @@ export class DisputeService {
       data: { status: 'DISPUTED' },
     })
 
-    return prisma.dispute.create({
+    const dispute = await prisma.dispute.create({
       data: {
         matchId: data.matchId,
         createdById: userId,
@@ -33,13 +34,27 @@ export class DisputeService {
       include: {
         match: {
           include: {
-            player1: { select: { username: true } },
-            player2: { select: { username: true } },
+            player1: { select: { id: true, username: true } },
+            player2: { select: { id: true, username: true } },
           },
         },
         creator: { select: { username: true } },
       },
     })
+
+    // Notificar o outro jogador
+    const opponentId = match.player1Id === userId ? match.player2Id : match.player1Id
+    if (opponentId) {
+      notify(
+        opponentId,
+        'MATCH',
+        'Disputa aberta',
+        `Uma disputa foi aberta para a sua partida. Motivo: ${data.reason}`,
+        { disputeId: dispute.id, matchId: data.matchId }
+      ).catch(() => {})
+    }
+
+    return dispute
   }
 
   async resolve(disputeId: string, data: ResolveDisputeInput, resolverId: string) {

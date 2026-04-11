@@ -26,6 +26,9 @@ export const queryKeys = {
   notifications: {
     all: ['notifications'] as const,
   },
+  rankings: {
+    global: (limit: number) => ['rankings', 'global', limit] as const,
+  },
 }
 
 // ====== TOURNAMENTS ======
@@ -196,6 +199,16 @@ export function useWalletBalance() {
   return useQuery({
     queryKey: queryKeys.wallet.balance,
     queryFn: () => api.get<{ data: { balance: number; frozenAmount: number } }>('/wallet/balance'),
+  })
+}
+
+// ====== RANKINGS ======
+export function useGlobalRanking(limit = 50) {
+  return useQuery({
+    queryKey: queryKeys.rankings.global(limit),
+    queryFn: () =>
+      api.get<{ data: { players: any[] } }>(`/rankings/global?limit=${limit}`, { requireAuth: false }),
+    staleTime: 30_000,
   })
 }
 

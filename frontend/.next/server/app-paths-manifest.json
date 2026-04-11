@@ -1,8 +1,10 @@
 {
-  "/dashboard/page": "app/dashboard/page.js",
-  "/login/page": "app/login/page.js",
-  "/profile/page": "app/profile/page.js",
-  "/admin/page": "app/admin/page.js",
-  "/icon/[[...__metadata_id__]]/route": "app/icon/[[...__metadata_id__]]/route.js",
-  "/wallet/page": "app/wallet/page.js"
+  "/tournaments/page": "app/tournaments/page.js",
+  "/tournaments/[id]/page": "app/tournaments/[id]/page.js",
+  "/rankings/page": "app/rankings/page.js",
+  "/teams/page": "app/teams/page.js",
+  "/social/page": "app/social/page.js",
+  "/wallet/page": "app/wallet/page.js",
+  "/notifications/page": "app/notifications/page.js",
+  "/admin/page": "app/admin/page.js"
 }

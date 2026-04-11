@@ -18,6 +18,30 @@ declare module 'fastify' {
   }
 }
 
+// Cache de usuários banidos — verificado a cada 60s
+const bannedCache = new Map<string, boolean>()
+let bannedCacheTime = 0
+const BANNED_CACHE_TTL = 60_000
+
+async function isBanned(userId: string): Promise<boolean> {
+  const now = Date.now()
+  if (now - bannedCacheTime > BANNED_CACHE_TTL) {
+    bannedCache.clear()
+    bannedCacheTime = now
+  }
+
+  if (bannedCache.has(userId)) return bannedCache.get(userId)!
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { isBanned: true },
+  })
+
+  const banned = !user || user.isBanned
+  bannedCache.set(userId, banned)
+  return banned
+}
+
 export async function authMiddleware(request: FastifyRequest, reply: FastifyReply) {
   const authHeader = request.headers.authorization
 
@@ -29,22 +53,15 @@ export async function authMiddleware(request: FastifyRequest, reply: FastifyRepl
 
   try {
     const decoded = jwt.verify(token, env.JWT_SECRET) as JwtPayload
-    
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.sub },
-      select: { id: true, role: true, isBanned: true },
-    })
 
-    if (!user) {
-      throw new UnauthorizedError('Usuário não encontrado')
-    }
+    // JWT já contém userId e role — usa direto sem query ao DB
+    request.userId = decoded.sub
+    request.userRole = decoded.role
 
-    if (user.isBanned) {
+    // Verifica ban com cache (não bloqueia se já verificou recentemente)
+    if (await isBanned(decoded.sub)) {
       throw new ForbiddenError('Conta suspensa')
     }
-
-    request.userId = user.id
-    request.userRole = user.role
   } catch (error) {
     if (error instanceof UnauthorizedError || error instanceof ForbiddenError) {
       throw error

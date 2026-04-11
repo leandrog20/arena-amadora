@@ -64,6 +64,7 @@ export function usePrefetch() {
 
   // Prefetch dos dados críticos do dashboard (stats + wallet)
   const prefetchDashboardData = useCallback(() => {
+    if (!localStorage.getItem('accessToken')) return
     prefetchData(queryKeys.user.stats, prefetchFns.userStats)
     prefetchData(queryKeys.wallet.balance, prefetchFns.walletBalance)
   }, [prefetchData])
@@ -74,6 +75,7 @@ export function usePrefetch() {
       queryKeys.tournaments.list('page=1&limit=10'),
       prefetchFns.tournaments,
     )
+    if (!localStorage.getItem('accessToken')) return
     prefetchData(queryKeys.notifications.all, prefetchFns.notifications)
   }, [prefetchData])
 

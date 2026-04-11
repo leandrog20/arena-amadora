@@ -243,4 +243,68 @@ export class AuthService {
 
     return { accessToken, refreshToken }
   }
+
+  async forgotPassword(email: string) {
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: { id: true, passwordHash: true },
+    })
+
+    // Sempre retorna sucesso para não revelar se o email existe
+    if (!user) return { message: 'Se o email existir, enviaremos um link de recuperação' }
+
+    // Token JWT assinado com hash da senha — invalidado automaticamente quando a senha muda
+    const resetToken = jwt.sign(
+      { sub: user.id, purpose: 'password-reset' },
+      env.JWT_SECRET + user.passwordHash,
+      { expiresIn: '15m' } as SignOptions,
+    )
+
+    // TODO: Enviar email com link: ${env.FRONTEND_URL}/reset-password?token=${resetToken}
+    // Por enquanto, loga no console (dev)
+    if (env.NODE_ENV === 'development') {
+      console.log(`🔑 Reset link: ${env.FRONTEND_URL}/reset-password?token=${resetToken}`)
+    }
+
+    return { message: 'Se o email existir, enviaremos um link de recuperação' }
+  }
+
+  async resetPassword(token: string, newPassword: string) {
+    // Decodifica sem verificar para pegar o userId
+    const unverified = jwt.decode(token) as { sub?: string; purpose?: string } | null
+    if (!unverified?.sub || unverified.purpose !== 'password-reset') {
+      throw new UnauthorizedError('Token inválido ou expirado')
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: unverified.sub },
+      select: { id: true, passwordHash: true },
+    })
+
+    if (!user) {
+      throw new UnauthorizedError('Token inválido ou expirado')
+    }
+
+    // Verifica o token com a senha atual como parte do secret
+    try {
+      jwt.verify(token, env.JWT_SECRET + user.passwordHash)
+    } catch {
+      throw new UnauthorizedError('Token inválido ou expirado')
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 12)
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash },
+    })
+
+    // Revogar todos os refresh tokens (força re-login)
+    await prisma.refreshToken.updateMany({
+      where: { userId: user.id },
+      data: { isRevoked: true },
+    })
+
+    return { message: 'Senha alterada com sucesso' }
+  }
 }

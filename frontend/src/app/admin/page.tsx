@@ -42,23 +42,40 @@ interface AdminUser {
   createdAt: string
 }
 
+interface Dispute {
+  id: string
+  status: string
+  reason: string
+  resolution: string | null
+  createdAt: string
+  creator: { username: string }
+  match: {
+    tournament: { title: string }
+    player1: { username: string }
+    player2: { username: string }
+  }
+}
+
 export default function AdminPage() {
   const toast = useToastStore()
   const [dashboard, setDashboard] = useState<AdminDashboard | null>(null)
   const [users, setUsers] = useState<AdminUser[]>([])
+  const [disputes, setDisputes] = useState<Dispute[]>([])
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<'overview' | 'users'>('overview')
+  const [tab, setTab] = useState<'overview' | 'users' | 'disputes'>('overview')
   const [actionLoading, setActionLoading] = useState<string | null>(null)
 
   useEffect(() => {
     async function load() {
       try {
-        const [dRes, uRes] = await Promise.all([
+        const [dRes, uRes, diRes] = await Promise.all([
           api.get<{ data: AdminDashboard }>('/admin/dashboard'),
           api.get<{ data: AdminUser[] }>('/admin/users?limit=50'),
+          api.get<{ data: { disputes: Dispute[] } }>('/disputes?limit=50'),
         ])
         setDashboard(dRes.data)
         setUsers(uRes.data)
+        setDisputes(diRes.data.disputes || [])
       } catch {
         //
       } finally {
@@ -84,6 +101,21 @@ export default function AdminPage() {
             ? { ...u, status: currentStatus === 'BANNED' ? 'ACTIVE' : 'BANNED' }
             : u
         )
+      )
+    } catch (err: any) {
+      toast.error(err?.message || 'Erro')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  async function resolveDispute(disputeId: string, status: string, resolution: string) {
+    setActionLoading(disputeId)
+    try {
+      await api.patch(`/disputes/${disputeId}/resolve`, { status, resolution })
+      toast.success('Disputa resolvida')
+      setDisputes((prev) =>
+        prev.map((d) => (d.id === disputeId ? { ...d, status, resolution } : d))
       )
     } catch (err: any) {
       toast.error(err?.message || 'Erro')
@@ -120,17 +152,21 @@ export default function AdminPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-border">
-        {(['overview', 'users'] as const).map((t) => (
+        {([
+          { key: 'overview', label: 'Visão Geral' },
+          { key: 'users', label: 'Usuários' },
+          { key: 'disputes', label: 'Disputas' },
+        ] as const).map((t) => (
           <button
-            key={t}
-            onClick={() => setTab(t)}
+            key={t.key}
+            onClick={() => setTab(t.key)}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              tab === t
+              tab === t.key
                 ? 'border-primary text-primary'
                 : 'border-transparent text-muted-foreground hover:text-foreground'
             }`}
           >
-            {t === 'overview' ? 'Visão Geral' : 'Usuários'}
+            {t.label}
           </button>
         ))}
       </div>
@@ -261,6 +297,72 @@ export default function AdminPage() {
                   </div>
                 ))}
               </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+
+      {tab === 'disputes' && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+          <Card>
+            <CardContent className="p-0">
+              {disputes.length === 0 ? (
+                <div className="py-12 text-center">
+                  <Shield className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-muted-foreground">Nenhuma disputa encontrada</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-border">
+                  {disputes.map((d) => (
+                    <div key={d.id} className="p-4 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-medium">
+                            {d.match?.player1?.username || '?'} vs {d.match?.player2?.username || '?'}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {d.match?.tournament?.title} • Aberta por {d.creator?.username}
+                          </p>
+                        </div>
+                        <Badge
+                          variant={
+                            d.status === 'OPEN' ? 'warning'
+                            : d.status === 'RESOLVED' ? 'success'
+                            : d.status === 'REJECTED' ? 'destructive'
+                            : 'info'
+                          }
+                        >
+                          {d.status === 'OPEN' ? 'Aberta' : d.status === 'RESOLVED' ? 'Resolvida' : d.status === 'REJECTED' ? 'Rejeitada' : d.status}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground">{d.reason}</p>
+                      {d.resolution && (
+                        <p className="text-sm text-gaming-green">Resolução: {d.resolution}</p>
+                      )}
+                      {(d.status === 'OPEN' || d.status === 'UNDER_REVIEW') && (
+                        <div className="flex gap-2 pt-1">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => resolveDispute(d.id, 'RESOLVED', 'Resolvida pelo admin')}
+                            isLoading={actionLoading === d.id}
+                          >
+                            Resolver
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => resolveDispute(d.id, 'REJECTED', 'Disputa rejeitada')}
+                            isLoading={actionLoading === d.id}
+                          >
+                            Rejeitar
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </motion.div>

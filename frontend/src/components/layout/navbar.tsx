@@ -18,6 +18,8 @@ import {
   Menu,
   X,
   Gamepad2,
+  Search,
+  Heart,
 } from 'lucide-react'
 import { memo, useState } from 'react'
 
@@ -27,6 +29,7 @@ const navItems = [
   { href: '/matches', label: 'Partidas', icon: Swords },
   { href: '/rankings', label: 'Rankings', icon: BarChart3 },
   { href: '/teams', label: 'Equipes', icon: Users },
+  { href: '/social', label: 'Amigos', icon: Heart },
   { href: '/wallet', label: 'Carteira', icon: Wallet },
 ]
 
@@ -73,6 +76,11 @@ export function Navbar() {
           <div className="flex items-center gap-3">
             {isAuthenticated ? (
               <>
+                <Link href="/search">
+                  <Button variant="ghost" size="icon">
+                    <Search className="h-5 w-5" />
+                  </Button>
+                </Link>
                 <Link href="/notifications">
                   <Button variant="ghost" size="icon" className="relative">
                     <Bell className="h-5 w-5" />

@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { motion } from 'framer-motion'
-import { Gamepad2, Mail, Lock } from 'lucide-react'
+import { Gamepad2, Mail, Lock, Eye, EyeOff } from 'lucide-react'
 
 const loginSchema = z.object({
   email: z.string().email('Email inválido'),
@@ -28,6 +28,7 @@ export default function LoginPage() {
   const toast = useToastStore()
   const { prefetchAfterLogin } = usePrefetch()
   const [isLoading, setIsLoading] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
 
   const {
     register,
@@ -41,7 +42,6 @@ export default function LoginPage() {
     setIsLoading(true)
     try {
       await login(data.email, data.password)
-      // Prefetch rotas + dados críticos enquanto o toast aparece
       prefetchAfterLogin()
       toast.success('Bem-vindo de volta!', 'Login realizado com sucesso')
       router.push('/dashboard')
@@ -85,12 +85,28 @@ export default function LoginPage() {
               <div className="relative">
                 <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   placeholder="Sua senha"
-                  className="pl-10"
+                  className="pl-10 pr-10"
                   error={errors.password?.message}
                   {...register('password')}
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-3 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+
+              <div className="flex justify-end">
+                <Link
+                  href="/forgot-password"
+                  className="text-sm text-primary hover:underline"
+                >
+                  Esqueci minha senha
+                </Link>
               </div>
 
               <Button

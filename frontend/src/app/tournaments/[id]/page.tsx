@@ -1,10 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
 import { useToastStore } from '@/stores/toast-store'
 import { Tournament, Match, Participant } from '@/types'
+import { useSocket } from '@/hooks/use-socket'
+import { api } from '@/services/api'
 import {
   useTournament,
   useTournamentMatches,
@@ -31,6 +33,8 @@ import {
   Shield,
   Crown,
   Play,
+  MessageSquare,
+  Send,
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -62,7 +66,7 @@ export default function TournamentDetailPage() {
   const tournament = tRes?.data || null
   const matches = mRes?.data || []
 
-  const [tab, setTab] = useState<'info' | 'bracket' | 'participants'>('info')
+  const [tab, setTab] = useState<'info' | 'bracket' | 'participants' | 'chat'>('info')
 
   // Participants carregam separadamente — só busca quando a aba é aberta
   const { data: pRes, isLoading: pLoading } = useTournamentParticipants(id, tab === 'participants')
@@ -217,17 +221,22 @@ export default function TournamentDetailPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-border">
-        {(['info', 'bracket', 'participants'] as const).map((t) => (
+        {([
+          { key: 'info', label: 'Informações' },
+          { key: 'bracket', label: 'Chave / Partidas' },
+          { key: 'participants', label: 'Participantes' },
+          { key: 'chat', label: 'Chat' },
+        ] as const).map((t) => (
           <button
-            key={t}
-            onClick={() => setTab(t)}
+            key={t.key}
+            onClick={() => setTab(t.key)}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              tab === t
+              tab === t.key
                 ? 'border-primary text-primary'
                 : 'border-transparent text-muted-foreground hover:text-foreground'
             }`}
           >
-            {t === 'info' ? 'Informações' : t === 'bracket' ? 'Chave / Partidas' : 'Participantes'}
+            {t.label}
           </button>
         ))}
       </div>
@@ -249,7 +258,7 @@ export default function TournamentDetailPage() {
       )}
 
       {tab === 'bracket' && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
           {mLoading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {[...Array(4)].map((_, i) => (
@@ -264,81 +273,46 @@ export default function TournamentDetailPage() {
               </CardContent>
             </Card>
           ) : (
-            rounds.map((round) => (
-              <div key={round}>
-                <h3 className="text-lg font-semibold mb-3">Rodada {round}</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {matches
-                    .filter((m) => m.round === round)
-                    .map((match) => (
-                      <Card
-                        key={match.id}
-                        className={`hover:border-primary/20 transition-colors ${
-                          match.status === 'COMPLETED' ? 'opacity-80' : ''
-                        }`}
-                      >
-                        <CardContent className="p-4">
-                          <div className="flex items-center justify-between mb-2">
-                            <Badge
-                              variant={
-                                match.status === 'COMPLETED'
-                                  ? 'info'
-                                  : match.status === 'IN_PROGRESS'
-                                  ? 'warning'
-                                  : 'secondary'
-                              }
-                            >
-                              {match.status === 'COMPLETED'
-                                ? 'Finalizada'
-                                : match.status === 'IN_PROGRESS'
-                                ? 'Em Andamento'
-                                : 'Pendente'}
-                            </Badge>
-                            <span className="text-xs text-muted-foreground">
-                              Partida {match.position}
-                            </span>
-                          </div>
-                          <div className="space-y-2">
+            <div className="overflow-x-auto">
+              <div className="flex gap-8 min-w-max pb-4">
+                {rounds.map((round, ri) => (
+                  <div key={round} className="flex flex-col gap-4 min-w-[260px]">
+                    <h3 className="text-sm font-semibold text-center text-muted-foreground uppercase tracking-wider">
+                      {round === rounds[rounds.length - 1] && rounds.length > 1
+                        ? 'Final'
+                        : round === rounds[rounds.length - 2] && rounds.length > 2
+                        ? 'Semifinal'
+                        : `Rodada ${round}`}
+                    </h3>
+                    <div
+                      className="flex flex-col justify-around flex-1"
+                      style={{ gap: `${Math.pow(2, ri) * 16}px` }}
+                    >
+                      {matches
+                        .filter((m) => m.round === round)
+                        .map((match) => (
+                          <Link key={match.id} href={`/matches/${match.id}`}>
                             <div
-                              className={`flex items-center justify-between p-2 rounded ${
-                                match.winnerId === match.player1Id
-                                  ? 'bg-gaming-green/10 border border-gaming-green/20'
-                                  : 'bg-muted/50'
+                              className={`border rounded-lg overflow-hidden hover:border-primary/40 transition-colors ${
+                                match.status === 'COMPLETED' ? 'border-border' : 'border-primary/20'
                               }`}
                             >
-                              <span className="font-medium flex items-center gap-1">
-                                {match.winnerId === match.player1Id && (
-                                  <Crown className="h-4 w-4 text-gaming-yellow" />
-                                )}
-                                {match.player1?.displayName || match.player1?.username || 'TBD'}
-                              </span>
-                              <span className="font-bold">{match.player1Score ?? '-'}</span>
+                              <MatchSlot match={match} isTop />
+                              <div className="border-t border-border" />
+                              <MatchSlot match={match} isTop={false} />
                             </div>
-                            <div
-                              className={`flex items-center justify-between p-2 rounded ${
-                                match.winnerId === match.player2Id
-                                  ? 'bg-gaming-green/10 border border-gaming-green/20'
-                                  : 'bg-muted/50'
-                              }`}
-                            >
-                              <span className="font-medium flex items-center gap-1">
-                                {match.winnerId === match.player2Id && (
-                                  <Crown className="h-4 w-4 text-gaming-yellow" />
-                                )}
-                                {match.player2?.displayName || match.player2?.username || 'TBD'}
-                              </span>
-                              <span className="font-bold">{match.player2Score ?? '-'}</span>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                </div>
+                          </Link>
+                        ))}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))
+            </div>
           )}
         </motion.div>
       )}
+
+      {tab === 'chat' && <TournamentChat tournamentId={id} />}
 
       {tab === 'participants' && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
@@ -389,5 +363,157 @@ export default function TournamentDetailPage() {
         </motion.div>
       )}
     </div>
+  )
+}
+
+// ===== Bracket match slot component =====
+function MatchSlot({ match, isTop }: { match: Match; isTop: boolean }) {
+  const player = isTop ? match.player1 : match.player2
+  const playerId = isTop ? match.player1Id : match.player2Id
+  const score = isTop ? match.player1Score : match.player2Score
+  const isWinner = match.winnerId && match.winnerId === playerId
+
+  return (
+    <div
+      className={`flex items-center justify-between px-3 py-2 text-sm ${
+        isWinner ? 'bg-gaming-green/10 font-semibold' : 'bg-card'
+      }`}
+    >
+      <div className="flex items-center gap-2 min-w-0">
+        {isWinner && <Crown className="h-3 w-3 text-gaming-yellow shrink-0" />}
+        <span className="truncate">
+          {player?.displayName || player?.username || 'A definir'}
+        </span>
+      </div>
+      <span className="font-mono text-xs ml-2">{score ?? '-'}</span>
+    </div>
+  )
+}
+
+// ===== Tournament Chat component =====
+interface ChatMessage {
+  id: string
+  content: string
+  userId: string
+  username: string
+  displayName: string | null
+  avatarUrl: string | null
+  createdAt: string
+}
+
+function TournamentChat({ tournamentId }: { tournamentId: string }) {
+  const { user } = useAuthStore()
+  const { joinTournament, leaveTournament, sendMessage, onEvent } = useSocket()
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(true)
+  const endRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    joinTournament(tournamentId)
+
+    api.get<{ data: { messages: ChatMessage[] } }>(`/tournaments/${tournamentId}/messages`)
+      .then((res) => {
+        setMessages(res.data.messages)
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+
+    return () => {
+      leaveTournament(tournamentId)
+    }
+  }, [tournamentId, joinTournament, leaveTournament])
+
+  useEffect(() => {
+    const unsub = onEvent('tournament:new_message', (msg: unknown) => {
+      setMessages((prev) => [...prev, msg as ChatMessage])
+    })
+    return unsub
+  }, [onEvent])
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  function handleSend(e: React.FormEvent) {
+    e.preventDefault()
+    if (!input.trim()) return
+    sendMessage(tournamentId, input.trim())
+    setInput('')
+  }
+
+  if (!user) {
+    return (
+      <Card>
+        <CardContent className="py-12 text-center">
+          <MessageSquare className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+          <p className="text-muted-foreground">Faça login para participar do chat</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+      <Card className="flex flex-col h-[500px]">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <MessageSquare className="h-4 w-4" />
+            Chat do Torneio
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex-1 overflow-y-auto space-y-3 px-4">
+          {loading ? (
+            <div className="space-y-2">
+              {[...Array(5)].map((_, i) => (
+                <Skeleton key={i} className="h-8 w-3/4" />
+              ))}
+            </div>
+          ) : messages.length === 0 ? (
+            <p className="text-center text-muted-foreground text-sm pt-8">
+              Nenhuma mensagem ainda. Seja o primeiro!
+            </p>
+          ) : (
+            messages.map((msg) => (
+              <div key={msg.id} className={`flex gap-2 ${msg.userId === user?.id ? 'justify-end' : ''}`}>
+                {msg.userId !== user?.id && (
+                  <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary shrink-0">
+                    {(msg.displayName || msg.username)[0].toUpperCase()}
+                  </div>
+                )}
+                <div
+                  className={`max-w-[70%] rounded-lg px-3 py-2 text-sm ${
+                    msg.userId === user?.id
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted'
+                  }`}
+                >
+                  {msg.userId !== user?.id && (
+                    <p className="text-xs font-semibold mb-0.5 opacity-70">
+                      {msg.displayName || msg.username}
+                    </p>
+                  )}
+                  <p>{msg.content}</p>
+                </div>
+              </div>
+            ))
+          )}
+          <div ref={endRef} />
+        </CardContent>
+        <form onSubmit={handleSend} className="flex gap-2 p-4 border-t border-border">
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Digite sua mensagem..."
+            maxLength={500}
+            className="flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+          <Button type="submit" size="sm" disabled={!input.trim()}>
+            <Send className="h-4 w-4" />
+          </Button>
+        </form>
+      </Card>
+    </motion.div>
   )
 }

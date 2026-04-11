@@ -15,6 +15,7 @@ import {
   UpdateTournamentInput,
   ListTournamentsInput,
 } from './tournament.schemas'
+import { notifyMany } from '../../common/utils/notify'
 
 export class TournamentService {
   async create(data: CreateTournamentInput, createdById: string) {
@@ -383,6 +384,16 @@ export class TournamentService {
       ])
     })
 
+    // Notificar todos os participantes
+    const participantUserIds = sortedParticipants.map((p) => p.userId)
+    notifyMany(
+      participantUserIds,
+      'TOURNAMENT',
+      'Torneio iniciado!',
+      `O torneio está em andamento. Confira sua primeira partida!`,
+      { tournamentId }
+    ).catch(() => {})
+
     return { id: tournamentId, status: 'IN_PROGRESS' as const, totalRounds }
   }
 
@@ -397,7 +408,9 @@ export class TournamentService {
     if (format === 'ROUND_ROBIN') {
       return this.generateRoundRobin(playerIds, tournamentId)
     }
-    // Double elimination usa single como base
+    if (format === 'DOUBLE_ELIMINATION') {
+      return this.generateDoubleElimination(playerIds, tournamentId)
+    }
     return this.generateSingleElimination(playerIds, tournamentId)
   }
 
@@ -461,10 +474,8 @@ export class TournamentService {
     }[] = []
 
     const n = playerIds.length
-    const rounds = n % 2 === 0 ? n - 1 : n
     let position = 0
 
-    // Gerar todas as combinações
     for (let i = 0; i < n; i++) {
       for (let j = i + 1; j < n; j++) {
         position++
@@ -479,6 +490,96 @@ export class TournamentService {
         })
       }
     }
+
+    return matches
+  }
+
+  /**
+   * Double Elimination:
+   * - Winners bracket (rounds 1..W)
+   * - Losers bracket (rounds W+1..W+L)
+   * - Grand final (round W+L+1)
+   *
+   * metadata.bracket = 'winners' | 'losers' | 'grand_final'
+   */
+  private generateDoubleElimination(playerIds: string[], tournamentId: string) {
+    const n = playerIds.length
+    const bracketSize = Math.pow(2, Math.ceil(Math.log2(n)))
+    const winnersRounds = Math.log2(bracketSize)
+
+    const matches: {
+      tournamentId: string
+      round: number
+      position: number
+      player1Id: string | null
+      player2Id: string | null
+      status: 'PENDING' | 'COMPLETED'
+      metadata: any
+    }[] = []
+
+    // Winners bracket — mesma lógica de single elimination
+    let position = 0
+    for (let i = 0; i < bracketSize; i += 2) {
+      position++
+      const p1 = playerIds[i] || null
+      const p2 = playerIds[i + 1] || null
+      matches.push({
+        tournamentId,
+        round: 1,
+        position,
+        player1Id: p1,
+        player2Id: p2,
+        status: !p1 || !p2 ? 'COMPLETED' : 'PENDING',
+        metadata: { bracket: 'winners' },
+      })
+    }
+
+    for (let round = 2; round <= winnersRounds; round++) {
+      const matchesInRound = bracketSize / Math.pow(2, round)
+      for (let pos = 1; pos <= matchesInRound; pos++) {
+        matches.push({
+          tournamentId,
+          round,
+          position: pos,
+          player1Id: null,
+          player2Id: null,
+          status: 'PENDING',
+          metadata: { bracket: 'winners' },
+        })
+      }
+    }
+
+    // Losers bracket — (winnersRounds - 1) * 2 rounds
+    const losersRounds = (winnersRounds - 1) * 2
+    for (let lr = 1; lr <= losersRounds; lr++) {
+      const round = winnersRounds + lr
+      // Losers rounds alternate: first uses half the slots, next same
+      const matchesInRound = lr === 1
+        ? bracketSize / 4
+        : Math.max(1, Math.ceil(bracketSize / Math.pow(2, Math.ceil(lr / 2) + 1)))
+      for (let pos = 1; pos <= matchesInRound; pos++) {
+        matches.push({
+          tournamentId,
+          round,
+          position: pos,
+          player1Id: null,
+          player2Id: null,
+          status: 'PENDING',
+          metadata: { bracket: 'losers' },
+        })
+      }
+    }
+
+    // Grand final
+    matches.push({
+      tournamentId,
+      round: winnersRounds + losersRounds + 1,
+      position: 1,
+      player1Id: null,
+      player2Id: null,
+      status: 'PENDING',
+      metadata: { bracket: 'grand_final' },
+    })
 
     return matches
   }

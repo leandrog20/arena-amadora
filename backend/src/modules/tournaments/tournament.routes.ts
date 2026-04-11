@@ -9,6 +9,7 @@ export async function tournamentRoutes(app: FastifyInstance) {
   app.get('/', controller.list)
   app.get('/:id', { preHandler: [optionalAuth] }, controller.getById)
   app.get('/:id/participants', controller.getParticipants)
+  app.get('/:id/messages', { preHandler: [authMiddleware] }, controller.getChatMessages)
 
   // Rotas autenticadas
   app.post('/', { preHandler: [authMiddleware, requireRole('ADMIN', 'MODERATOR')] }, controller.create)

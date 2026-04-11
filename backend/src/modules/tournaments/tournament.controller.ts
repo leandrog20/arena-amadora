@@ -1,5 +1,6 @@
 import { FastifyReply, FastifyRequest } from 'fastify'
 import { TournamentService } from './tournament.service'
+import { prisma } from '../../config/prisma'
 import {
   createTournamentSchema,
   updateTournamentSchema,
@@ -59,5 +60,30 @@ export class TournamentController {
     const { id } = request.params as { id: string }
     const result = await tournamentService.startTournament(id, request.userId, request.userRole)
     return sendSuccess(reply, result)
+  }
+
+  async getChatMessages(request: FastifyRequest, reply: FastifyReply) {
+    const { id } = request.params as { id: string }
+    const { cursor, limit } = request.query as { cursor?: string; limit?: number }
+    const take = Math.min(Number(limit) || 50, 100)
+
+    const where: Record<string, unknown> = { tournamentId: id }
+    if (cursor) {
+      where.createdAt = { lt: new Date(cursor) }
+    }
+
+    const messages = await prisma.chatMessage.findMany({
+      where,
+      include: {
+        user: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take,
+    })
+
+    return sendSuccess(reply, {
+      messages: messages.reverse(),
+      nextCursor: messages.length === take ? messages[0]?.createdAt?.toISOString() : null,
+    })
   }
 }

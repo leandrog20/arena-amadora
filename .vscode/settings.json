@@ -1,0 +1,4 @@
+{
+  "prisma.schemaPath": ["backend/prisma/schema.prisma"],
+  "prisma.prismaFmtBinPath": "./backend/node_modules/.bin/prisma"
+}

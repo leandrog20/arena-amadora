@@ -33,4 +33,21 @@ export class SocialController {
     await socialService.removeFriend(request.userId, friendId)
     return sendSuccess(reply, { message: 'Amizade removida' })
   }
+
+  async blockUser(request: FastifyRequest, reply: FastifyReply) {
+    const { userId: targetId } = request.params as { userId: string }
+    await socialService.blockUser(request.userId, targetId)
+    return sendSuccess(reply, { message: 'Usuário bloqueado' })
+  }
+
+  async unblockUser(request: FastifyRequest, reply: FastifyReply) {
+    const { userId: targetId } = request.params as { userId: string }
+    await socialService.unblockUser(request.userId, targetId)
+    return sendSuccess(reply, { message: 'Usuário desbloqueado' })
+  }
+
+  async getBlockedUsers(request: FastifyRequest, reply: FastifyReply) {
+    const result = await socialService.getBlockedUsers(request.userId)
+    return sendSuccess(reply, result)
+  }
 }

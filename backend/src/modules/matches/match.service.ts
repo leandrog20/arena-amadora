@@ -3,6 +3,11 @@ import { NotFoundError, AppError, ForbiddenError } from '../../common/errors'
 import { SubmitResultInput } from './match.schemas'
 import { calculateElo } from '../../common/utils'
 import { invalidateCache } from '../../config/redis'
+import { notify, notifyMany } from '../../common/utils/notify'
+import { emitMatchUpdate } from '../../socket/socket-server'
+import { AchievementService } from '../achievements/achievement.service'
+
+const achievementService = new AchievementService()
 
 export class MatchService {
   async getById(matchId: string) {
@@ -170,6 +175,95 @@ export class MatchService {
         }
       }
 
+      // Double elimination — avançar vencedor + enviar perdedor para losers bracket
+      if (match.tournament.format === 'DOUBLE_ELIMINATION') {
+        const matchMeta = (match as any).metadata as { bracket?: string } | null
+        const bracket = matchMeta?.bracket || 'winners'
+
+        if (bracket === 'winners') {
+          // Vencedor avança no winners bracket
+          const nextRound = match.round + 1
+          const nextPosition = Math.ceil(match.position / 2)
+          const nextWinners = await tx.match.findFirst({
+            where: {
+              tournamentId: match.tournamentId,
+              round: nextRound,
+              metadata: { path: ['bracket'], equals: 'winners' },
+            },
+          })
+          if (nextWinners) {
+            const isOdd = match.position % 2 === 1
+            await tx.match.update({
+              where: { id: nextWinners.id },
+              data: isOdd ? { player1Id: data.winnerId } : { player2Id: data.winnerId },
+            })
+          }
+
+          // Perdedor vai para losers bracket
+          if (loserId) {
+            const losersMatch = await tx.match.findFirst({
+              where: {
+                tournamentId: match.tournamentId,
+                metadata: { path: ['bracket'], equals: 'losers' },
+                OR: [{ player1Id: null }, { player2Id: null }],
+              },
+              orderBy: { round: 'asc' },
+            })
+            if (losersMatch) {
+              await tx.match.update({
+                where: { id: losersMatch.id },
+                data: !losersMatch.player1Id
+                  ? { player1Id: loserId }
+                  : { player2Id: loserId },
+              })
+            }
+          }
+        } else if (bracket === 'losers') {
+          // Perdedor no losers bracket = eliminado
+          if (loserId) {
+            await tx.participant.updateMany({
+              where: { userId: loserId, tournamentId: match.tournamentId },
+              data: { isEliminated: true },
+            })
+          }
+
+          // Vencedor avança no losers bracket
+          const nextLosers = await tx.match.findFirst({
+            where: {
+              tournamentId: match.tournamentId,
+              round: { gt: match.round },
+              metadata: { path: ['bracket'], equals: 'losers' },
+              OR: [{ player1Id: null }, { player2Id: null }],
+            },
+            orderBy: { round: 'asc' },
+          })
+          if (nextLosers) {
+            await tx.match.update({
+              where: { id: nextLosers.id },
+              data: !nextLosers.player1Id
+                ? { player1Id: data.winnerId }
+                : { player2Id: data.winnerId },
+            })
+          } else {
+            // Sem mais losers rounds — vai para grand final
+            const grandFinal = await tx.match.findFirst({
+              where: {
+                tournamentId: match.tournamentId,
+                metadata: { path: ['bracket'], equals: 'grand_final' },
+              },
+            })
+            if (grandFinal) {
+              await tx.match.update({
+                where: { id: grandFinal.id },
+                data: { player2Id: data.winnerId },
+              })
+            }
+          }
+        } else if (bracket === 'grand_final') {
+          await this.completeTournament(tx, match.tournamentId, data.winnerId)
+        }
+      }
+
       // Verificar se round robin acabou
       if (match.tournament.format === 'ROUND_ROBIN') {
         const pendingMatches = await tx.match.count({
@@ -204,6 +298,31 @@ export class MatchService {
     invalidateCache('ranking:*')
     invalidateCache('tournaments:*')
 
+    // Notificar jogadores do resultado
+    const winnerName = match.player1Id === data.winnerId ? 'Jogador 1' : 'Jogador 2'
+    const playerIds = [match.player1Id, match.player2Id].filter((id): id is string => !!id)
+    for (const pid of playerIds) {
+      const isWinner = pid === data.winnerId
+      notify(
+        pid,
+        'MATCH',
+        isWinner ? 'Vitória!' : 'Derrota',
+        isWinner
+          ? `Você venceu a partida no torneio ${match.tournament.title}!`
+          : `Você perdeu a partida no torneio ${match.tournament.title}.`,
+        { matchId, tournamentId: match.tournamentId }
+      ).catch(() => {})
+    }
+
+    // Emitir atualização WebSocket da partida
+    emitMatchUpdate(matchId, { matchId, winnerId: data.winnerId, status: 'COMPLETED' })
+
+    // Verificar conquistas para ambos jogadores (fire-and-forget)
+    const playerIdsForAchievements = [match.player1Id, match.player2Id].filter((id): id is string => !!id)
+    for (const pid of playerIdsForAchievements) {
+      achievementService.checkAndAward(pid).catch(() => {})
+    }
+
     return this.getById(matchId)
   }
 
@@ -217,39 +336,72 @@ export class MatchService {
 
     const prizePool = Number(tournament.prizePool)
 
-    // Distribuir prêmio se houver
-    if (prizePool > 0) {
-      const wallet = await tx.wallet.findUnique({
-        where: { userId: winnerId },
-        select: { id: true, balance: true },
-      })
-      if (wallet) {
-        const balance = Number(wallet.balance)
-        const newBalance = balance + prizePool
+    // Determinar 2º e 3º lugar
+    const completedMatches = await tx.match.findMany({
+      where: { tournamentId, status: 'COMPLETED', winnerId: { not: null } },
+      orderBy: [{ round: 'desc' }, { position: 'asc' }],
+      select: { player1Id: true, player2Id: true, winnerId: true, round: true },
+    })
 
-        await Promise.all([
-          tx.wallet.update({
-            where: { userId: winnerId },
-            data: { balance: newBalance },
-          }),
-          tx.transaction.create({
-            data: {
-              walletId: wallet.id,
-              type: 'TOURNAMENT_PRIZE',
-              amount: prizePool,
-              balanceBefore: balance,
-              balanceAfter: newBalance,
-              status: 'COMPLETED',
-              description: `Prêmio do torneio: ${tournament.title}`,
-              referenceId: tournamentId,
-            },
-          }),
-        ])
+    let secondPlaceId: string | null = null
+    let thirdPlaceIds: string[] = []
+
+    if (completedMatches.length > 0) {
+      // Finalista = perdedor da última partida
+      const finalMatch = completedMatches[0]
+      secondPlaceId = finalMatch.player1Id === winnerId ? finalMatch.player2Id : finalMatch.player1Id
+
+      // Semi-finalistas perdedores = 3º lugar
+      const semiFinalRound = finalMatch.round - 1
+      if (semiFinalRound > 0) {
+        const semiMatches = completedMatches.filter((m: any) => m.round === semiFinalRound)
+        thirdPlaceIds = semiMatches
+          .map((m: any) => m.player1Id === m.winnerId ? m.player2Id : m.player1Id)
+          .filter((id: string | null): id is string => !!id && id !== winnerId && id !== secondPlaceId)
       }
     }
 
-    // Placement + XP + status do torneio em paralelo
-    await Promise.all([
+    // Distribuição: 60% 1º, 25% 2º, 15% 3º (dividido entre 3ºs)
+    const prize1st = prizePool > 0 ? Math.floor(prizePool * 0.60) : 0
+    const prize2nd = prizePool > 0 ? Math.floor(prizePool * 0.25) : 0
+    const prize3rd = prizePool > 0 ? Math.floor((prizePool * 0.15) / Math.max(1, thirdPlaceIds.length)) : 0
+
+    // Helper para pagar prêmio
+    const awardPrize = async (userId: string, amount: number, placement: number) => {
+      if (amount <= 0) return
+      const wallet = await tx.wallet.findUnique({
+        where: { userId },
+        select: { id: true, balance: true },
+      })
+      if (!wallet) return
+      const balance = Number(wallet.balance)
+      const newBalance = balance + amount
+      await Promise.all([
+        tx.wallet.update({ where: { userId }, data: { balance: newBalance } }),
+        tx.transaction.create({
+          data: {
+            walletId: wallet.id,
+            type: 'TOURNAMENT_PRIZE',
+            amount,
+            balanceBefore: balance,
+            balanceAfter: newBalance,
+            status: 'COMPLETED',
+            description: `${placement}º lugar - ${tournament.title}`,
+            referenceId: tournamentId,
+          },
+        }),
+      ])
+    }
+
+    // Pagar prêmios
+    await awardPrize(winnerId, prize1st, 1)
+    if (secondPlaceId) await awardPrize(secondPlaceId, prize2nd, 2)
+    for (const thirdId of thirdPlaceIds) {
+      await awardPrize(thirdId, prize3rd, 3)
+    }
+
+    // Placements + XP + status
+    const placementUpdates = [
       tx.participant.updateMany({
         where: { userId: winnerId, tournamentId },
         data: { placement: 1 },
@@ -260,12 +412,53 @@ export class MatchService {
       }),
       tx.tournament.update({
         where: { id: tournamentId },
-        data: {
-          status: 'COMPLETED',
-          endDate: new Date(),
-        },
+        data: { status: 'COMPLETED', endDate: new Date() },
       }),
-    ])
+    ]
+
+    if (secondPlaceId) {
+      placementUpdates.push(
+        tx.participant.updateMany({
+          where: { userId: secondPlaceId, tournamentId },
+          data: { placement: 2 },
+        }),
+        tx.user.update({
+          where: { id: secondPlaceId },
+          data: { xp: { increment: 100 } },
+        }),
+      )
+    }
+
+    for (const thirdId of thirdPlaceIds) {
+      placementUpdates.push(
+        tx.participant.updateMany({
+          where: { userId: thirdId, tournamentId },
+          data: { placement: 3 },
+        }),
+        tx.user.update({
+          where: { id: thirdId },
+          data: { xp: { increment: 50 } },
+        }),
+      )
+    }
+
+    await Promise.all(placementUpdates)
+
+    // Notificar vencedores do torneio
+    const placements = [
+      { id: winnerId, place: 1, prize: prize1st },
+      ...(secondPlaceId ? [{ id: secondPlaceId, place: 2, prize: prize2nd }] : []),
+      ...thirdPlaceIds.map((id) => ({ id, place: 3, prize: prize3rd })),
+    ]
+    for (const p of placements) {
+      notify(
+        p.id,
+        'TOURNAMENT',
+        `${p.place}º lugar!`,
+        `Você ficou em ${p.place}º no torneio ${tournament.title}${p.prize > 0 ? ` e ganhou R$ ${(p.prize / 100).toFixed(2)}` : ''}!`,
+        { tournamentId, placement: p.place, prize: p.prize }
+      ).catch(() => {})
+    }
   }
 
   async uploadProof(matchId: string, proofUrl: string, userId: string) {

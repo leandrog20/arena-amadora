@@ -1,6 +1,6 @@
 import { FastifyReply, FastifyRequest } from 'fastify'
 import { AuthService } from './auth.service'
-import { registerSchema, loginSchema, refreshTokenSchema } from './auth.schemas'
+import { registerSchema, loginSchema, refreshTokenSchema, forgotPasswordSchema, resetPasswordSchema } from './auth.schemas'
 import { sendSuccess, getClientIp } from '../../common/utils'
 
 const authService = new AuthService()
@@ -62,5 +62,17 @@ export class AuthController {
       },
     })
     return sendSuccess(reply, user)
+  }
+
+  async forgotPassword(request: FastifyRequest, reply: FastifyReply) {
+    const { email } = forgotPasswordSchema.parse(request.body)
+    const result = await authService.forgotPassword(email)
+    return sendSuccess(reply, result)
+  }
+
+  async resetPassword(request: FastifyRequest, reply: FastifyReply) {
+    const data = resetPasswordSchema.parse(request.body)
+    const result = await authService.resetPassword(data.token, data.password)
+    return sendSuccess(reply, result)
   }
 }

@@ -1,5 +1,6 @@
 import { prisma } from '../../config/prisma'
 import { NotFoundError, ConflictError, AppError } from '../../common/errors'
+import { notify } from '../../common/utils/notify'
 
 export class SocialService {
   async sendFriendRequest(senderId: string, receiverUsername: string) {
@@ -25,12 +26,23 @@ export class SocialService {
       if (existing.status === 'PENDING') throw new ConflictError('Solicitação já enviada')
     }
 
-    return prisma.friendRequest.create({
+    const request = await prisma.friendRequest.create({
       data: { senderId, receiverId: receiver.id },
       include: {
+        sender: { select: { id: true, username: true, displayName: true } },
         receiver: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
       },
     })
+
+    notify(
+      receiver.id,
+      'SOCIAL',
+      'Nova solicitação de amizade',
+      `${request.sender.displayName || request.sender.username} quer ser seu amigo!`,
+      { requestId: request.id, senderId }
+    ).catch(() => {})
+
+    return request
   }
 
   async respondToRequest(requestId: string, userId: string, accept: boolean) {
@@ -88,5 +100,45 @@ export class SocialService {
     if (!friendship) throw new NotFoundError('Amizade não encontrada')
 
     await prisma.friendRequest.delete({ where: { id: friendship.id } })
+  }
+
+  async blockUser(userId: string, targetId: string) {
+    if (userId === targetId) throw new AppError('Não é possível bloquear a si mesmo')
+
+    const target = await prisma.user.findUnique({ where: { id: targetId }, select: { id: true } })
+    if (!target) throw new NotFoundError('Usuário não encontrado')
+
+    // Remove amizade existente ou request pendente, e cria um BLOCKED
+    await prisma.friendRequest.deleteMany({
+      where: {
+        OR: [
+          { senderId: userId, receiverId: targetId },
+          { senderId: targetId, receiverId: userId },
+        ],
+      },
+    })
+
+    await prisma.friendRequest.create({
+      data: { senderId: userId, receiverId: targetId, status: 'BLOCKED' },
+    })
+  }
+
+  async unblockUser(userId: string, targetId: string) {
+    const block = await prisma.friendRequest.findFirst({
+      where: { senderId: userId, receiverId: targetId, status: 'BLOCKED' },
+    })
+    if (!block) throw new NotFoundError('Usuário não está bloqueado')
+
+    await prisma.friendRequest.delete({ where: { id: block.id } })
+  }
+
+  async getBlockedUsers(userId: string) {
+    const blocks = await prisma.friendRequest.findMany({
+      where: { senderId: userId, status: 'BLOCKED' },
+      include: {
+        receiver: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
+      },
+    })
+    return blocks.map((b) => b.receiver)
   }
 }

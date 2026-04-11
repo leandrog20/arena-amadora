@@ -36,4 +36,24 @@ export class TeamController {
     await teamService.removeMember(id, memberId, request.userId)
     return sendSuccess(reply, { message: 'Membro removido' })
   }
+
+  async update(request: FastifyRequest, reply: FastifyReply) {
+    const { id } = request.params as { id: string }
+    const data = request.body as { name?: string; description?: string; logoUrl?: string }
+    const result = await teamService.update(id, data, request.userId)
+    return sendSuccess(reply, result)
+  }
+
+  async delete(request: FastifyRequest, reply: FastifyReply) {
+    const { id } = request.params as { id: string }
+    await teamService.delete(id, request.userId)
+    return sendSuccess(reply, { message: 'Equipe deletada' })
+  }
+
+  async transferOwnership(request: FastifyRequest, reply: FastifyReply) {
+    const { id } = request.params as { id: string }
+    const { newOwnerId } = request.body as { newOwnerId: string }
+    await teamService.transferOwnership(id, newOwnerId, request.userId)
+    return sendSuccess(reply, { message: 'Propriedade transferida' })
+  }
 }

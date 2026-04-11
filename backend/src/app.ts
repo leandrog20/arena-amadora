@@ -1,6 +1,7 @@
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import helmet from '@fastify/helmet'
+import compress from '@fastify/compress'
 import rateLimit from '@fastify/rate-limit'
 import multipart from '@fastify/multipart'
 import cookie from '@fastify/cookie'
@@ -19,6 +20,7 @@ import { notificationRoutes } from './modules/notifications/notification.routes'
 import { disputeRoutes } from './modules/disputes/dispute.routes'
 import { adminRoutes } from './modules/admin/admin.routes'
 import { rankingRoutes } from './modules/rankings/ranking.routes'
+import { achievementRoutes } from './modules/achievements/achievement.routes'
 
 export async function buildApp() {
   const app = Fastify({
@@ -39,6 +41,11 @@ export async function buildApp() {
     origin: env.FRONTEND_URL,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+  })
+
+  // Compressão — reduz tamanho das respostas em ~70%
+  await app.register(compress, {
+    threshold: 1024, // comprime respostas > 1KB
   })
 
   await app.register(rateLimit, {
@@ -75,6 +82,7 @@ export async function buildApp() {
   await app.register(disputeRoutes, { prefix: '/api/disputes' })
   await app.register(adminRoutes, { prefix: '/api/admin' })
   await app.register(rankingRoutes, { prefix: '/api/rankings' })
+  await app.register(achievementRoutes, { prefix: '/api/achievements' })
 
   return app
 }

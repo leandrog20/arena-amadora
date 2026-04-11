@@ -43,19 +43,15 @@ export class RankingService {
     return cached(`ranking:game:${game}:${page}:${limit}`, 30, async () => {
       const skip = (page - 1) * limit
 
-      const participants = await prisma.participant.findMany({
-        where: {
-          tournament: { game },
-        },
-        select: { userId: true },
-        distinct: ['userId'],
-      })
-
-      const userIds = participants.map((p) => p.userId)
-
+      // Query única com subquery — evita N+1
       const [players, total] = await Promise.all([
         prisma.user.findMany({
-          where: { id: { in: userIds }, isBanned: false },
+          where: {
+            isBanned: false,
+            participations: {
+              some: { tournament: { game } },
+            },
+          },
           select: {
             id: true,
             username: true,
@@ -71,7 +67,12 @@ export class RankingService {
           take: limit,
         }),
         prisma.user.count({
-          where: { id: { in: userIds }, isBanned: false },
+          where: {
+            isBanned: false,
+            participations: {
+              some: { tournament: { game } },
+            },
+          },
         }),
       ])
 
