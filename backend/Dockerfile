@@ -6,15 +6,15 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Copiar package.json e lockfile para cache de dependências
-COPY package.json package-lock.json* ./
+COPY backend/package.json backend/package-lock.json* ./
 
 # Instalar dependências (incluindo devDependencies para build)
 RUN npm ci
 
 # Copiar source e prisma
-COPY tsconfig.json ./
-COPY prisma/ ./prisma/
-COPY src/ ./src/
+COPY backend/tsconfig.json ./
+COPY backend/prisma/ ./prisma/
+COPY backend/src/ ./src/
 
 # Gerar Prisma Client e compilar TypeScript
 RUN npx prisma generate && npx tsc
@@ -32,11 +32,11 @@ ENV PORT=3333
 ENV HOST=0.0.0.0
 
 # Copiar package.json para instalar apenas dependências de produção
-COPY package.json package-lock.json* ./
+COPY backend/package.json backend/package-lock.json* ./
 RUN npm ci --omit=dev
 
 # Copiar Prisma schema + migrations (necessário para prisma migrate deploy)
-COPY prisma/ ./prisma/
+COPY backend/prisma/ ./prisma/
 
 # Gerar Prisma Client na imagem final
 RUN npx prisma generate
