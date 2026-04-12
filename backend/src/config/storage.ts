@@ -1,4 +1,5 @@
 import { env } from './env'
+import { createClient } from '@supabase/supabase-js'
 
 // ============================================================
 // SUPABASE STORAGE — PREPARAÇÃO
@@ -55,9 +56,6 @@ export async function uploadFile(
     throw new Error('Supabase Storage não configurado. Defina SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY.')
   }
 
-  // Import dinâmico — não quebra se @supabase/supabase-js não estiver instalado
-  // @ts-ignore - módulo opcional, instalar com: npm install @supabase/supabase-js
-  const { createClient } = await import('@supabase/supabase-js')
   const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
 
   const { data, error } = await supabase.storage
@@ -87,8 +85,6 @@ export async function uploadFile(
 export async function deleteFile(bucket: BucketName, filePath: string): Promise<void> {
   if (!isStorageConfigured()) return
 
-  // @ts-ignore - módulo opcional, instalar com: npm install @supabase/supabase-js
-  const { createClient } = await import('@supabase/supabase-js')
   const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
 
   const { error } = await supabase.storage

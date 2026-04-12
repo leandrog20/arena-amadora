@@ -28,6 +28,10 @@ export const env = {
 
   FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:3000',
 
+  // E-mail (Resend)
+  RESEND_API_KEY: process.env.RESEND_API_KEY || '',
+  EMAIL_FROM: process.env.EMAIL_FROM || 'Arena Amadora <noreply@arena-amadora.com>',
+
   REDIS_URL: process.env.REDIS_URL || 'redis://localhost:6379',
 
   UPLOAD_DIR: process.env.UPLOAD_DIR || './uploads',

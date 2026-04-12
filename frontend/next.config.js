@@ -3,7 +3,7 @@ const path = require('path')
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   images: {
-    domains: ['localhost'],
+    domains: ['localhost', 'aobwawbezgggqcmfqopk.supabase.co'],
   },
   webpack: (config) => {
     // Fix Windows/OneDrive case-sensitivity issue (C:\Users vs c:\Users)

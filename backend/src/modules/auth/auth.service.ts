@@ -10,6 +10,7 @@ import {
 } from '../../common/errors'
 import { RegisterInput, LoginInput } from './auth.schemas'
 import dayjs from 'dayjs'
+import { sendEmail, buildPasswordResetEmail } from '../../config/email'
 
 export class AuthService {
   async register(data: RegisterInput, ip?: string, userAgent?: string) {
@@ -260,10 +261,14 @@ export class AuthService {
       { expiresIn: '15m' } as SignOptions,
     )
 
-    // TODO: Enviar email com link: ${env.FRONTEND_URL}/reset-password?token=${resetToken}
-    // Por enquanto, loga no console (dev)
-    if (env.NODE_ENV === 'development') {
-      console.log(`🔑 Reset link: ${env.FRONTEND_URL}/reset-password?token=${resetToken}`)
+    const resetLink = `${env.FRONTEND_URL}/reset-password?token=${resetToken}`
+    const { subject, html } = buildPasswordResetEmail(resetLink)
+
+    try {
+      await sendEmail({ to: email, subject, html })
+    } catch (error) {
+      console.error('Erro ao enviar email de recuperação:', error)
+      // Não expõe o erro ao usuário
     }
 
     return { message: 'Se o email existir, enviaremos um link de recuperação' }

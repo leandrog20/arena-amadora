@@ -4,10 +4,20 @@ import { env } from './env'
 const redis = new Redis(env.REDIS_URL, {
   maxRetriesPerRequest: 3,
   lazyConnect: true,
+  enableReadyCheck: true,
   // Não derrubar o app se Redis estiver fora — funciona como fallback sem cache
   retryStrategy(times) {
-    if (times > 5) return null // para de reconectar
-    return Math.min(times * 200, 2000)
+    if (times > 10) {
+      console.warn('⚠️ Redis: máximo de reconexões atingido, desistindo')
+      return null
+    }
+    const delay = Math.min(times * 500, 5000)
+    console.log(`🔄 Redis: tentativa de reconexão ${times} em ${delay}ms`)
+    return delay
+  },
+  reconnectOnError(err) {
+    // Reconectar em erros de conexão perdida
+    return err.message.includes('READONLY') || err.message.includes('ECONNRESET')
   },
 })
 
