@@ -3,26 +3,33 @@
 # ============================================
 FROM node:20-alpine AS builder
 
+# OpenSSL necessário para Prisma no Alpine
+RUN apk add --no-cache openssl
+
 WORKDIR /app
 
-# Copiar package.json e lockfile para cache de dependências
+# Copiar package.json, lockfile E prisma schema antes do npm ci
+# (postinstall roda prisma generate, que precisa do schema)
 COPY backend/package.json backend/package-lock.json* ./
+COPY backend/prisma/ ./prisma/
 
 # Instalar dependências (incluindo devDependencies para build)
 RUN npm ci
 
-# Copiar source e prisma
+# Copiar source
 COPY backend/tsconfig.json ./
-COPY backend/prisma/ ./prisma/
 COPY backend/src/ ./src/
 
-# Gerar Prisma Client e compilar TypeScript
-RUN npx prisma generate && npx tsc
+# Compilar TypeScript (prisma generate já rodou no postinstall)
+RUN npx tsc
 
 # ============================================
 # Production stage
 # ============================================
 FROM node:20-alpine AS production
+
+# OpenSSL necessário para Prisma no Alpine
+RUN apk add --no-cache openssl
 
 WORKDIR /app
 
@@ -31,15 +38,12 @@ ENV NODE_ENV=production
 ENV PORT=3333
 ENV HOST=0.0.0.0
 
-# Copiar package.json para instalar apenas dependências de produção
+# Copiar package.json e prisma schema antes do npm ci
 COPY backend/package.json backend/package-lock.json* ./
-RUN npm ci --omit=dev
-
-# Copiar Prisma schema + migrations (necessário para prisma migrate deploy)
 COPY backend/prisma/ ./prisma/
 
-# Gerar Prisma Client na imagem final
-RUN npx prisma generate
+# Instalar dependências de produção (postinstall roda prisma generate, schema já está lá)
+RUN npm ci --omit=dev
 
 # Copiar código compilado do builder
 COPY --from=builder /app/dist ./dist
