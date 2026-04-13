@@ -20,7 +20,7 @@ const createTournamentSchema = z.object({
   format: z.enum(['SINGLE_ELIMINATION', 'DOUBLE_ELIMINATION', 'ROUND_ROBIN']),
   maxParticipants: z.coerce.number().min(2, 'Mínimo 2').max(256, 'Máximo 256'),
   minParticipants: z.coerce.number().min(2).optional(),
-  entryFee: z.coerce.number().min(0).optional(),
+  prizePool: z.coerce.number().min(0).optional(),
   rules: z.string().max(5000).optional().or(z.literal('')),
   startDate: z.string().min(1, 'Obrigatório'),
   endDate: z.string().optional().or(z.literal('')),
@@ -43,6 +43,7 @@ export default function CreateTournamentPage() {
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors },
   } = useForm<FormData>({
     resolver: zodResolver(createTournamentSchema),
@@ -50,9 +51,20 @@ export default function CreateTournamentPage() {
       format: 'SINGLE_ELIMINATION',
       maxParticipants: 8,
       minParticipants: 2,
-      entryFee: 0,
+      prizePool: 0,
     },
   })
+
+  // Cálculo automático da inscrição (10% taxa plataforma)
+  const watchPrize = watch('prizePool') || 0
+  const watchMax = watch('maxParticipants') || 2
+  const PLATFORM_FEE = 10 // %
+  const calculatedEntryFee = watchPrize > 0
+    ? Math.ceil((watchPrize / (1 - PLATFORM_FEE / 100) / watchMax) * 100) / 100
+    : 0
+  const platformEarnings = watchPrize > 0
+    ? (calculatedEntryFee * watchMax - watchPrize).toFixed(2)
+    : '0.00'
 
   async function onSubmit(data: FormData) {
     try {
@@ -62,7 +74,7 @@ export default function CreateTournamentPage() {
         format: data.format,
         maxParticipants: data.maxParticipants,
         minParticipants: data.minParticipants || 2,
-        entryFee: data.entryFee || 0,
+        prizePool: data.prizePool || 0,
         startDate: new Date(data.startDate).toISOString(),
       }
       if (data.description) body.description = data.description
@@ -159,15 +171,26 @@ export default function CreateTournamentPage() {
                 />
               </div>
 
-              {/* Taxa */}
-              <Input
-                label="Taxa de Inscrição (R$)"
-                type="number"
-                min={0}
-                step="0.01"
-                placeholder="0.00 (gratuito)"
-                {...register('entryFee')}
-              />
+              {/* Premiação */}
+              <div>
+                <Input
+                  label="Premiação Total (R$)"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  placeholder="0.00 (gratuito)"
+                  {...register('prizePool')}
+                />
+                {calculatedEntryFee > 0 && (
+                  <div className="mt-2 p-3 rounded-lg bg-muted/50 text-sm space-y-1">
+                    <p>Taxa de inscrição calculada: <span className="font-semibold text-primary">R$ {calculatedEntryFee.toFixed(2)}</span> por participante</p>
+                    <p className="text-muted-foreground text-xs">
+                      {watchMax} participantes × R$ {calculatedEntryFee.toFixed(2)} = R$ {(calculatedEntryFee * watchMax).toFixed(2)} total
+                      (R$ {Number(watchPrize).toFixed(2)} premiação + R$ {platformEarnings} taxa plataforma {PLATFORM_FEE}%)
+                    </p>
+                  </div>
+                )}
+              </div>
 
               {/* Datas */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

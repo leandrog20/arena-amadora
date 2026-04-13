@@ -2,7 +2,7 @@ import { Decimal } from '@prisma/client/runtime/library'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../config/prisma'
 import { env } from '../../config/env'
-import { cached } from '../../config/redis'
+import { cached, invalidateCache as invalidateRedisCache } from '../../config/redis'
 import {
   NotFoundError,
   ConflictError,
@@ -21,6 +21,18 @@ export class TournamentService {
   async create(data: CreateTournamentInput, createdById: string) {
     const feePercentage = env.PLATFORM_FEE_PERCENTAGE
 
+    // Calcular taxa de inscrição a partir do prêmio desejado
+    // entryFee = prizePool / (maxParticipants * (1 - taxa/100))
+    // Assim: total arrecadado = entryFee * maxParticipants
+    //        plataforma ganha = total * taxa%
+    //        prizePool = total - plataforma
+    const desiredPrize = data.prizePool || 0
+    let entryFee = 0
+    if (desiredPrize > 0) {
+      const totalNeeded = desiredPrize / (1 - feePercentage / 100)
+      entryFee = Math.ceil((totalNeeded / data.maxParticipants) * 100) / 100 // arredonda pra cima (centavos)
+    }
+
     const tournament = await prisma.tournament.create({
       data: {
         title: data.title,
@@ -29,7 +41,7 @@ export class TournamentService {
         format: data.format,
         maxParticipants: data.maxParticipants,
         minParticipants: data.minParticipants,
-        entryFee: data.entryFee,
+        entryFee,
         rules: data.rules,
         isTeamBased: data.isTeamBased,
         teamSize: data.teamSize,
@@ -37,12 +49,16 @@ export class TournamentService {
         endDate: data.endDate ? new Date(data.endDate) : null,
         registrationEnd: data.registrationEnd ? new Date(data.registrationEnd) : null,
         feePercentage,
+        prizePool: 0, // começa zerado, acumula conforme inscrições
         status: 'REGISTRATION',
         createdById,
       },
     })
 
-    return tournament
+    // Invalidar cache de listagem para o novo torneio aparecer imediatamente
+    await invalidateRedisCache('tournaments:list:*')
+
+    return { ...tournament, calculatedEntryFee: entryFee, estimatedPrize: desiredPrize }
   }
 
   async update(id: string, data: UpdateTournamentInput, userId: string, userRole: string) {
@@ -67,16 +83,110 @@ export class TournamentService {
     if (data.format) updateData.format = data.format
     if (data.maxParticipants) updateData.maxParticipants = data.maxParticipants
     if (data.minParticipants) updateData.minParticipants = data.minParticipants
-    if (data.entryFee !== undefined) updateData.entryFee = data.entryFee
     if (data.rules !== undefined) updateData.rules = data.rules
     if (data.startDate) updateData.startDate = new Date(data.startDate)
     if (data.endDate) updateData.endDate = new Date(data.endDate)
     if (data.registrationEnd) updateData.registrationEnd = new Date(data.registrationEnd)
 
+    // Recalcular entryFee se prizePool ou maxParticipants mudou
+    if (data.prizePool !== undefined || data.maxParticipants) {
+      const maxP = data.maxParticipants || (await prisma.tournament.findUnique({ where: { id }, select: { maxParticipants: true } }))!.maxParticipants
+      const desiredPrize = data.prizePool ?? 0
+      if (desiredPrize > 0) {
+        const feePercentage = env.PLATFORM_FEE_PERCENTAGE
+        const totalNeeded = desiredPrize / (1 - feePercentage / 100)
+        updateData.entryFee = Math.ceil((totalNeeded / maxP) * 100) / 100
+      } else {
+        updateData.entryFee = 0
+      }
+    }
+
     return prisma.tournament.update({
       where: { id },
       data: updateData,
     })
+  }
+
+  async delete(id: string, userId: string, userRole: string) {
+    const tournament = await prisma.tournament.findUnique({
+      where: { id },
+      include: {
+        _count: { select: { participants: true } },
+        participants: { select: { userId: true } },
+      },
+    })
+    if (!tournament) throw new NotFoundError('Torneio não encontrado')
+
+    if (tournament.createdById !== userId && userRole !== 'ADMIN') {
+      throw new ForbiddenError('Sem permissão para excluir este torneio')
+    }
+
+    if (tournament.status === 'IN_PROGRESS') {
+      throw new AppError('Não é possível excluir um torneio em andamento')
+    }
+
+    const entryFee = Number(tournament.entryFee)
+
+    await prisma.$transaction(async (tx) => {
+      // Reembolsar todos os participantes se havia taxa de inscrição
+      if (entryFee > 0 && tournament._count.participants > 0) {
+        for (const participant of tournament.participants) {
+          const wallet = await tx.wallet.findUnique({ where: { userId: participant.userId } })
+          if (wallet) {
+            const balance = Number(wallet.balance)
+            const newBalance = balance + entryFee
+
+            await tx.wallet.update({
+              where: { userId: participant.userId },
+              data: { balance: newBalance },
+            })
+
+            await tx.transaction.create({
+              data: {
+                walletId: wallet.id,
+                type: 'REFUND',
+                amount: entryFee,
+                balanceBefore: balance,
+                balanceAfter: newBalance,
+                status: 'COMPLETED',
+                description: `Reembolso: torneio "${tournament.title}" excluído`,
+                referenceId: id,
+              },
+            })
+          }
+        }
+      }
+
+      // Deletar registros relacionados (disputes -> matches -> participants -> chat -> tournament)
+      const matchIds = await tx.match.findMany({
+        where: { tournamentId: id },
+        select: { id: true },
+      })
+      if (matchIds.length > 0) {
+        await tx.dispute.deleteMany({
+          where: { matchId: { in: matchIds.map((m) => m.id) } },
+        })
+      }
+      await tx.chatMessage.deleteMany({ where: { tournamentId: id } })
+      await tx.match.deleteMany({ where: { tournamentId: id } })
+      await tx.participant.deleteMany({ where: { tournamentId: id } })
+      await tx.tournament.delete({ where: { id } })
+    })
+
+    // Invalidar cache
+    await invalidateRedisCache('tournaments:list:*')
+
+    // Notificar participantes
+    if (tournament.participants.length > 0) {
+      const userIds = tournament.participants.map((p) => p.userId)
+      notifyMany(
+        userIds,
+        'TOURNAMENT',
+        'Torneio cancelado',
+        `O torneio "${tournament.title}" foi excluído.${entryFee > 0 ? ' Seu reembolso foi processado.' : ''}`,
+        { tournamentId: id }
+      ).catch(() => {})
+    }
   }
 
   async getById(id: string, userId?: string) {

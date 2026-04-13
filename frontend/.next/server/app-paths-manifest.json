@@ -1,22 +1,10 @@
 {
-  "/_not-found/page": "app/_not-found/page.js",
-  "/admin/page": "app/admin/page.js",
   "/dashboard/page": "app/dashboard/page.js",
-  "/login/page": "app/login/page.js",
-  "/forgot-password/page": "app/forgot-password/page.js",
-  "/matches/page": "app/matches/page.js",
-  "/page": "app/page.js",
-  "/notifications/page": "app/notifications/page.js",
   "/profile/[username]/page": "app/profile/[username]/page.js",
-  "/profile/page": "app/profile/page.js",
-  "/rankings/page": "app/rankings/page.js",
   "/search/page": "app/search/page.js",
-  "/reset-password/page": "app/reset-password/page.js",
+  "/page": "app/page.js",
+  "/profile/page": "app/profile/page.js",
   "/social/page": "app/social/page.js",
-  "/register/page": "app/register/page.js",
-  "/teams/page": "app/teams/page.js",
-  "/tournaments/create/page": "app/tournaments/create/page.js",
-  "/tournaments/[id]/page": "app/tournaments/[id]/page.js",
-  "/tournaments/page": "app/tournaments/page.js",
-  "/wallet/page": "app/wallet/page.js"
+  "/admin/page": "app/admin/page.js",
+  "/login/page": "app/login/page.js"
 }

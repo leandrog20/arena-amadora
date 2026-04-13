@@ -7,7 +7,7 @@ export const createTournamentSchema = z.object({
   format: z.enum(['SINGLE_ELIMINATION', 'DOUBLE_ELIMINATION', 'ROUND_ROBIN']),
   maxParticipants: z.number().int().min(2).max(256),
   minParticipants: z.number().int().min(2).default(2),
-  entryFee: z.number().min(0).default(0),
+  prizePool: z.number().min(0).default(0),
   rules: z.string().max(5000).optional(),
   isTeamBased: z.boolean().default(false),
   teamSize: z.number().int().min(2).max(10).optional(),

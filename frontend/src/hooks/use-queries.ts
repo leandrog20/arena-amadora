@@ -175,6 +175,17 @@ export function useCreateTournament() {
   })
 }
 
+// ====== DELETE TOURNAMENT ======
+export function useDeleteTournament() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => api.delete(`/tournaments/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.tournaments.all })
+    },
+  })
+}
+
 // ====== MATCHES ======
 export function useMyMatches(page: number) {
   return useQuery({

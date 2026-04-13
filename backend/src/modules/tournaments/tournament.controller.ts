@@ -24,6 +24,12 @@ export class TournamentController {
     return sendSuccess(reply, result)
   }
 
+  async delete(request: FastifyRequest, reply: FastifyReply) {
+    const { id } = request.params as { id: string }
+    await tournamentService.delete(id, request.userId, request.userRole)
+    return sendSuccess(reply, { message: 'Torneio excluído com sucesso' })
+  }
+
   async getById(request: FastifyRequest, reply: FastifyReply) {
     const { id } = request.params as { id: string }
     // userId é opcional (rota pública), usado apenas para checar isParticipant

@@ -14,6 +14,7 @@ export async function tournamentRoutes(app: FastifyInstance) {
   // Rotas autenticadas
   app.post('/', { preHandler: [authMiddleware, requireRole('ADMIN', 'MODERATOR')] }, controller.create)
   app.put('/:id', { preHandler: [authMiddleware] }, controller.update)
+  app.delete('/:id', { preHandler: [authMiddleware, requireRole('ADMIN', 'MODERATOR')] }, controller.delete)
   app.post('/:id/join', { preHandler: [authMiddleware] }, controller.join)
   app.post('/:id/leave', { preHandler: [authMiddleware] }, controller.leave)
   app.post('/:id/start', { preHandler: [authMiddleware] }, controller.start)

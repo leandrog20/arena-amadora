@@ -1,8 +1,10 @@
 import { FastifyReply, FastifyRequest } from 'fastify'
 import { AdminService } from './admin.service'
+import { TournamentService } from '../tournaments/tournament.service'
 import { sendSuccess, sendPaginated } from '../../common/utils'
 
 const adminService = new AdminService()
+const tournamentService = new TournamentService()
 
 export class AdminController {
   async getDashboard(request: FastifyRequest, reply: FastifyReply) {
@@ -51,5 +53,11 @@ export class AdminController {
   async getStats(request: FastifyRequest, reply: FastifyReply) {
     const result = await adminService.getPlatformStats()
     return sendSuccess(reply, result)
+  }
+
+  async deleteTournament(request: FastifyRequest, reply: FastifyReply) {
+    const { id } = request.params as { id: string }
+    await tournamentService.delete(id, request.userId, request.userRole)
+    return sendSuccess(reply, { message: 'Torneio excluído com sucesso' })
   }
 }

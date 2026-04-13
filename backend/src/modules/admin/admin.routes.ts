@@ -15,4 +15,5 @@ export async function adminRoutes(app: FastifyInstance) {
   app.patch('/users/:id/role', controller.setRole)
   app.get('/logs', controller.getActionLogs)
   app.get('/stats', controller.getStats)
+  app.delete('/tournaments/:id', controller.deleteTournament)
 }
