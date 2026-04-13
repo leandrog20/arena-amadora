@@ -60,7 +60,16 @@ export function setupSocketServer(httpServer: HttpServer) {
     socket.join(`user:${userId}`)
 
     // ====== CHAT DO TORNEIO ======
-    socket.on('tournament:join', (tournamentId: string) => {
+    socket.on('tournament:join', async (tournamentId: string) => {
+      // Verificar se é participante do torneio
+      const participant = await prisma.participant.findFirst({
+        where: { tournamentId, userId },
+      })
+      if (!participant) {
+        socket.emit('error', { message: 'Você não é participante deste torneio' })
+        return
+      }
+
       socket.join(`tournament:${tournamentId}`)
       socket.to(`tournament:${tournamentId}`).emit('tournament:user_joined', {
         userId,
@@ -76,6 +85,15 @@ export function setupSocketServer(httpServer: HttpServer) {
     socket.on('tournament:message', async (data: { tournamentId: string; content: string }) => {
       if (!data.content || data.content.trim().length === 0) return
       if (data.content.length > 500) return
+
+      // Verificar se é participante
+      const participant = await prisma.participant.findFirst({
+        where: { tournamentId: data.tournamentId, userId },
+      })
+      if (!participant) {
+        socket.emit('error', { message: 'Você não é participante deste torneio' })
+        return
+      }
 
       const sanitizedContent = sanitizeString(data.content)
 

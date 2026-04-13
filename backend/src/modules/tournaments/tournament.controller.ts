@@ -67,6 +67,14 @@ export class TournamentController {
     const { cursor, limit } = request.query as { cursor?: string; limit?: number }
     const take = Math.min(Number(limit) || 50, 100)
 
+    // Verificar se o usuário é participante do torneio
+    const participant = await prisma.participant.findFirst({
+      where: { tournamentId: id, userId: request.userId },
+    })
+    if (!participant) {
+      return reply.status(403).send({ success: false, message: 'Você não é participante deste torneio' })
+    }
+
     const where: Record<string, unknown> = { tournamentId: id }
     if (cursor) {
       where.createdAt = { lt: new Date(cursor) }

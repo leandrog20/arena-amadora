@@ -312,7 +312,20 @@ export default function TournamentDetailPage() {
         </motion.div>
       )}
 
-      {tab === 'chat' && <TournamentChat tournamentId={id} />}
+      {tab === 'chat' && (
+        isParticipant ? (
+          <TournamentChat tournamentId={id} />
+        ) : (
+          <Card>
+            <CardContent className="py-12 text-center">
+              <MessageSquare className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <p className="text-muted-foreground">
+                {user ? 'Apenas participantes do torneio podem acessar o chat' : 'Faça login e inscreva-se para acessar o chat'}
+              </p>
+            </CardContent>
+          </Card>
+        )
+      )}
 
       {tab === 'participants' && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
@@ -412,9 +425,19 @@ function TournamentChat({ tournamentId }: { tournamentId: string }) {
   useEffect(() => {
     joinTournament(tournamentId)
 
-    api.get<{ data: { messages: ChatMessage[] } }>(`/tournaments/${tournamentId}/messages`)
+    api.get<{ data: { messages: any[] } }>(`/tournaments/${tournamentId}/messages`)
       .then((res) => {
-        setMessages(res.data.messages)
+        // API retorna user como objeto aninhado; socket envia campos planos
+        const normalized = res.data.messages.map((msg: any) => ({
+          id: msg.id,
+          content: msg.content,
+          userId: msg.userId || msg.user?.id,
+          username: msg.username || msg.user?.username || 'Usuário',
+          displayName: msg.displayName || msg.user?.displayName || null,
+          avatarUrl: msg.avatarUrl || msg.user?.avatarUrl || null,
+          createdAt: msg.createdAt,
+        }))
+        setMessages(normalized)
         setLoading(false)
       })
       .catch(() => setLoading(false))
@@ -478,7 +501,7 @@ function TournamentChat({ tournamentId }: { tournamentId: string }) {
               <div key={msg.id} className={`flex gap-2 ${msg.userId === user?.id ? 'justify-end' : ''}`}>
                 {msg.userId !== user?.id && (
                   <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary shrink-0">
-                    {(msg.displayName || msg.username)[0].toUpperCase()}
+                    {(msg.displayName || msg.username || '?')[0].toUpperCase()}
                   </div>
                 )}
                 <div
@@ -490,7 +513,7 @@ function TournamentChat({ tournamentId }: { tournamentId: string }) {
                 >
                   {msg.userId !== user?.id && (
                     <p className="text-xs font-semibold mb-0.5 opacity-70">
-                      {msg.displayName || msg.username}
+                      {msg.displayName || msg.username || 'Usuário'}
                     </p>
                   )}
                   <p>{msg.content}</p>
