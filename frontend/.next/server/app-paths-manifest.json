@@ -1,10 +1,12 @@
 {
-  "/dashboard/page": "app/dashboard/page.js",
-  "/profile/[username]/page": "app/profile/[username]/page.js",
-  "/search/page": "app/search/page.js",
-  "/page": "app/page.js",
-  "/profile/page": "app/profile/page.js",
   "/social/page": "app/social/page.js",
+  "/profile/[username]/page": "app/profile/[username]/page.js",
+  "/dashboard/page": "app/dashboard/page.js",
+  "/login/page": "app/login/page.js",
   "/admin/page": "app/admin/page.js",
-  "/login/page": "app/login/page.js"
+  "/rankings/page": "app/rankings/page.js",
+  "/teams/page": "app/teams/page.js",
+  "/tournaments/page": "app/tournaments/page.js",
+  "/page": "app/page.js",
+  "/matches/page": "app/matches/page.js"
 }
