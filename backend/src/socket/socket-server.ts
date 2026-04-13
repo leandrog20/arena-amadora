@@ -13,7 +13,7 @@ export function getIO(): Server {
 
 export function setupSocketServer(httpServer: HttpServer) {
   // Suporta múltiplas origins separadas por vírgula
-  const allowedOrigins = env.FRONTEND_URL.split(',').map(o => o.trim())
+  const allowedOrigins = env.FRONTEND_URL.split(',').map(o => o.trim().replace(/\/$/, ''))
 
   io = new Server(httpServer, {
     cors: {

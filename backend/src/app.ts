@@ -38,7 +38,7 @@ export async function buildApp() {
   })
 
   // Suporta múltiplas origins separadas por vírgula no FRONTEND_URL
-  const allowedOrigins = env.FRONTEND_URL.split(',').map(o => o.trim())
+  const allowedOrigins = env.FRONTEND_URL.split(',').map(o => o.trim().replace(/\/$/, ''))
 
   await app.register(cors, {
     origin: allowedOrigins.length === 1 ? allowedOrigins[0] : allowedOrigins,
