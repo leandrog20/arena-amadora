@@ -61,15 +61,13 @@ export function setupSocketServer(httpServer: HttpServer) {
 
     // ====== CHAT DO TORNEIO ======
     socket.on('tournament:join', async (tournamentId: string) => {
-      // Verificar se é participante do torneio
-      const participant = await prisma.participant.findFirst({
-        where: { tournamentId, userId },
-      })
-      if (!participant) {
-        socket.emit('error', { message: 'Você não é participante deste torneio' })
+      // Permitir participante, admin ou moderador
+      const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } })
+      const participant = await prisma.participant.findFirst({ where: { tournamentId, userId } })
+      if (!participant && user?.role !== 'ADMIN' && user?.role !== 'MODERATOR') {
+        socket.emit('error', { message: 'Você não tem permissão para acessar o chat deste torneio' })
         return
       }
-
       socket.join(`tournament:${tournamentId}`)
       socket.to(`tournament:${tournamentId}`).emit('tournament:user_joined', {
         userId,
@@ -86,12 +84,11 @@ export function setupSocketServer(httpServer: HttpServer) {
       if (!data.content || data.content.trim().length === 0) return
       if (data.content.length > 500) return
 
-      // Verificar se é participante
-      const participant = await prisma.participant.findFirst({
-        where: { tournamentId: data.tournamentId, userId },
-      })
-      if (!participant) {
-        socket.emit('error', { message: 'Você não é participante deste torneio' })
+      // Permitir participante, admin ou moderador
+      const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } })
+      const participant = await prisma.participant.findFirst({ where: { tournamentId: data.tournamentId, userId } })
+      if (!participant && user?.role !== 'ADMIN' && user?.role !== 'MODERATOR') {
+        socket.emit('error', { message: 'Você não tem permissão para enviar mensagens neste chat' })
         return
       }
 

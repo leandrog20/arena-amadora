@@ -313,14 +313,14 @@ export default function TournamentDetailPage() {
       )}
 
       {tab === 'chat' && (
-        isParticipant ? (
+        (isParticipant || user?.role === 'ADMIN' || user?.role === 'MODERATOR') ? (
           <TournamentChat tournamentId={id} />
         ) : (
           <Card>
             <CardContent className="py-12 text-center">
               <MessageSquare className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <p className="text-muted-foreground">
-                {user ? 'Apenas participantes do torneio podem acessar o chat' : 'Faça login e inscreva-se para acessar o chat'}
+                {user ? 'Apenas participantes, administradores ou moderadores podem acessar o chat' : 'Faça login e inscreva-se para acessar o chat'}
               </p>
             </CardContent>
           </Card>

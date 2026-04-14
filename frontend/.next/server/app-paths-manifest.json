@@ -1,12 +1,8 @@
 {
-  "/social/page": "app/social/page.js",
-  "/profile/[username]/page": "app/profile/[username]/page.js",
-  "/dashboard/page": "app/dashboard/page.js",
+  "/tournaments/[id]/page": "app/tournaments/[id]/page.js",
   "/login/page": "app/login/page.js",
-  "/admin/page": "app/admin/page.js",
-  "/rankings/page": "app/rankings/page.js",
-  "/teams/page": "app/teams/page.js",
+  "/dashboard/page": "app/dashboard/page.js",
   "/tournaments/page": "app/tournaments/page.js",
-  "/page": "app/page.js",
-  "/matches/page": "app/matches/page.js"
+  "/tournaments/create/page": "app/tournaments/create/page.js",
+  "/page": "app/page.js"
 }

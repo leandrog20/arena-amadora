@@ -1,4 +1,6 @@
+
 'use client'
+import React from 'react'
 
 import { useRouter } from 'next/navigation'
 import { useToastStore } from '@/stores/toast-store'
@@ -13,6 +15,8 @@ import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
 import Link from 'next/link'
 
+import { supabase } from '@/lib/supabase'
+
 const createTournamentSchema = z.object({
   title: z.string().min(3, 'Mínimo 3 caracteres').max(100),
   game: z.string().min(1, 'Obrigatório').max(100),
@@ -25,6 +29,7 @@ const createTournamentSchema = z.object({
   startDate: z.string().min(1, 'Obrigatório'),
   endDate: z.string().optional().or(z.literal('')),
   registrationEnd: z.string().optional().or(z.literal('')),
+  bannerUrl: z.string().optional(),
 })
 
 type FormData = z.infer<typeof createTournamentSchema>
@@ -55,16 +60,40 @@ export default function CreateTournamentPage() {
     },
   })
 
-  // Cálculo automático da inscrição (10% taxa plataforma)
+  // Cálculo automático da inscrição com taxa customizável
+  const [platformFee, setPlatformFee] = React.useState(10)
   const watchPrize = watch('prizePool') || 0
   const watchMax = watch('maxParticipants') || 2
-  const PLATFORM_FEE = 10 // %
-  const calculatedEntryFee = watchPrize > 0
-    ? Math.ceil((watchPrize / (1 - PLATFORM_FEE / 100) / watchMax) * 100) / 100
+  const feePercent = Number(platformFee) > 0 ? Number(platformFee) : 0
+  const calculatedEntryFee = watchPrize > 0 && watchMax > 0
+    ? Math.ceil((watchPrize / (1 - feePercent / 100) / watchMax) * 100) / 100
     : 0
-  const platformEarnings = watchPrize > 0
+  const platformEarnings = watchPrize > 0 && watchMax > 0
     ? (calculatedEntryFee * watchMax - watchPrize).toFixed(2)
     : '0.00'
+
+
+  const [bannerFile, setBannerFile] = React.useState<File | null>(null)
+  const [bannerUrl, setBannerUrl] = React.useState<string | null>(null)
+  const [uploading, setUploading] = React.useState(false)
+
+  async function handleBannerChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setBannerFile(file)
+    setUploading(true)
+    const fileExt = file.name.split('.').pop()
+    const fileName = `tournament_${Date.now()}.${fileExt}`
+    const { data, error } = await supabase.storage.from('tournaments').upload(fileName, file, { upsert: true })
+    if (error) {
+      toast.error('Erro ao fazer upload da imagem')
+      setUploading(false)
+      return
+    }
+    const { data: publicUrl } = supabase.storage.from('tournaments').getPublicUrl(fileName)
+    setBannerUrl(publicUrl.publicUrl)
+    setUploading(false)
+  }
 
   async function onSubmit(data: FormData) {
     try {
@@ -81,6 +110,7 @@ export default function CreateTournamentPage() {
       if (data.rules) body.rules = data.rules
       if (data.endDate) body.endDate = new Date(data.endDate).toISOString()
       if (data.registrationEnd) body.registrationEnd = new Date(data.registrationEnd).toISOString()
+      if (bannerUrl) body.bannerUrl = bannerUrl
 
       // Prefetch a rota de torneios enquanto a API processa
       router.prefetch('/tournaments')
@@ -113,6 +143,17 @@ export default function CreateTournamentPage() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+
+              {/* Banner do Torneio */}
+              <div>
+                <label className="block text-sm font-medium mb-1.5">Imagem do Torneio</label>
+                <input type="file" accept="image/*" onChange={handleBannerChange} disabled={uploading} />
+                {uploading && <p className="text-xs text-muted-foreground mt-1">Enviando imagem...</p>}
+                {bannerUrl && (
+                  <img src={bannerUrl} alt="Banner" className="mt-2 rounded-lg max-h-40 border" />
+                )}
+              </div>
+
               {/* Info básica */}
               <Input
                 label="Nome do Torneio *"
@@ -171,8 +212,9 @@ export default function CreateTournamentPage() {
                 />
               </div>
 
-              {/* Premiação */}
-              <div>
+
+              {/* Premiação e Taxa da Plataforma */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Input
                   label="Premiação Total (R$)"
                   type="number"
@@ -181,16 +223,27 @@ export default function CreateTournamentPage() {
                   placeholder="0.00 (gratuito)"
                   {...register('prizePool')}
                 />
-                {calculatedEntryFee > 0 && (
-                  <div className="mt-2 p-3 rounded-lg bg-muted/50 text-sm space-y-1">
-                    <p>Taxa de inscrição calculada: <span className="font-semibold text-primary">R$ {calculatedEntryFee.toFixed(2)}</span> por participante</p>
-                    <p className="text-muted-foreground text-xs">
-                      {watchMax} participantes × R$ {calculatedEntryFee.toFixed(2)} = R$ {(calculatedEntryFee * watchMax).toFixed(2)} total
-                      (R$ {Number(watchPrize).toFixed(2)} premiação + R$ {platformEarnings} taxa plataforma {PLATFORM_FEE}%)
-                    </p>
-                  </div>
-                )}
+                <div>
+                  <label className="block text-sm font-medium mb-1.5">Taxa da Plataforma (%)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={50}
+                    value={platformFee}
+                    onChange={e => setPlatformFee(Number(e.target.value))}
+                    className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  />
+                </div>
               </div>
+              {calculatedEntryFee > 0 && (
+                <div className="mt-2 p-3 rounded-lg bg-muted/50 text-sm space-y-1">
+                  <p>Taxa de inscrição calculada: <span className="font-semibold text-primary">R$ {calculatedEntryFee.toFixed(2)}</span> por participante</p>
+                  <p className="text-muted-foreground text-xs">
+                    {watchMax} participantes × R$ {calculatedEntryFee.toFixed(2)} = R$ {(calculatedEntryFee * watchMax).toFixed(2)} total
+                    (R$ {Number(watchPrize).toFixed(2)} premiação + R$ {platformEarnings} taxa plataforma {feePercent}%)
+                  </p>
+                </div>
+              )}
 
               {/* Datas */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
