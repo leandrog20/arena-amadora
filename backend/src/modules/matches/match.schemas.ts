@@ -14,5 +14,10 @@ export const updateMatchSchema = z.object({
   scheduledAt: z.string().datetime().optional(),
 })
 
+export const advancePlayerByAdminSchema = z.object({
+  winnerId: z.string().uuid().describe('ID do jogador que vai avançar'),
+})
+
 export type SubmitResultInput = z.infer<typeof submitResultSchema>
 export type UpdateMatchInput = z.infer<typeof updateMatchSchema>
+export type AdvancePlayerByAdminInput = z.infer<typeof advancePlayerByAdminSchema>

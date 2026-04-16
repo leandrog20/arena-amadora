@@ -11,4 +11,7 @@ export async function matchRoutes(app: FastifyInstance) {
   // Rotas autenticadas
   app.post('/:id/result', { preHandler: [authMiddleware] }, controller.submitResult)
   app.post('/:id/proof', { preHandler: [authMiddleware] }, controller.uploadProof)
+  
+  // Rota de admin para avançar jogador no chaveamento
+  app.post('/:id/admin/advance', { preHandler: [authMiddleware] }, controller.advancePlayerByAdmin)
 }

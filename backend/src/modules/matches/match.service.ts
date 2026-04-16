@@ -1,6 +1,6 @@
 import { prisma } from '../../config/prisma'
 import { NotFoundError, AppError, ForbiddenError } from '../../common/errors'
-import { SubmitResultInput } from './match.schemas'
+import { SubmitResultInput, AdvancePlayerByAdminInput } from './match.schemas'
 import { calculateElo } from '../../common/utils'
 import { invalidateCache } from '../../config/redis'
 import { notify, notifyMany } from '../../common/utils/notify'
@@ -478,4 +478,206 @@ export class MatchService {
       data: { proofUrl },
     })
   }
+
+  async advancePlayerByAdmin(matchId: string, data: AdvancePlayerByAdminInput, userRole: string) {
+    // Apenas ADMIN e MODERATOR podem avançar jogadores
+    const isAdmin = userRole === 'ADMIN' || userRole === 'MODERATOR'
+    if (!isAdmin) {
+      throw new ForbiddenError('Apenas administradores podem avançar jogadores')
+    }
+
+    const match = await prisma.match.findUnique({
+      where: { id: matchId },
+      include: {
+        tournament: { select: { id: true, title: true, format: true, prizePool: true } },
+        player1: { select: { id: true, username: true } },
+        player2: { select: { id: true, username: true } },
+      },
+    })
+
+    if (!match) throw new NotFoundError('Partida não encontrada')
+
+    // Validar que o winnerId é um dos jogadores
+    if (data.winnerId !== match.player1Id && data.winnerId !== match.player2Id) {
+      throw new AppError('O jogador selecionado não participa desta partida')
+    }
+
+    if (match.status === 'COMPLETED') {
+      throw new AppError('Partida já foi finalizada')
+    }
+
+    const loserId = data.winnerId === match.player1Id ? match.player2Id : match.player1Id
+
+    await prisma.$transaction(async (tx) => {
+      // Marcar partida como completa (sem scores, pois foi decisão admin)
+      await tx.match.update({
+        where: { id: matchId },
+        data: {
+          winnerId: data.winnerId,
+          status: 'COMPLETED',
+          completedAt: new Date(),
+          metadata: {
+            ...((match.metadata as any) || {}),
+            advancedByAdmin: true,
+            adminAdvancedAt: new Date().toISOString(),
+          },
+        },
+      })
+
+      // Eliminar perdedor (todos os formatos)
+      if (loserId) {
+        await tx.participant.updateMany({
+          where: {
+            userId: loserId,
+            tournamentId: match.tournamentId,
+          },
+          data: { isEliminated: true },
+        })
+      }
+
+      // Avançar vencedor para próxima rodada (single elimination)
+      if (match.tournament.format === 'SINGLE_ELIMINATION') {
+        const nextRound = match.round + 1
+        const nextPosition = Math.ceil(match.position / 2)
+
+        const nextMatch = await tx.match.findFirst({
+          where: {
+            tournamentId: match.tournamentId,
+            round: nextRound,
+            position: nextPosition,
+          },
+        })
+
+        if (nextMatch) {
+          const isOddPosition = match.position % 2 === 1
+          await tx.match.update({
+            where: { id: nextMatch.id },
+            data: isOddPosition
+              ? { player1Id: data.winnerId }
+              : { player2Id: data.winnerId },
+          })
+        } else {
+          // Final — torneio completo
+          await this.completeTournament(tx, match.tournamentId, data.winnerId)
+        }
+      }
+
+      // Double elimination — avançar vencedor + enviar perdedor para losers bracket
+      if (match.tournament.format === 'DOUBLE_ELIMINATION') {
+        const matchMeta = (match as any).metadata as { bracket?: string } | null
+        const bracket = matchMeta?.bracket || 'winners'
+
+        if (bracket === 'winners') {
+          // Vencedor avança no winners bracket
+          const nextRound = match.round + 1
+          const nextPosition = Math.ceil(match.position / 2)
+          const nextWinners = await tx.match.findFirst({
+            where: {
+              tournamentId: match.tournamentId,
+              round: nextRound,
+              metadata: { path: ['bracket'], equals: 'winners' },
+            },
+          })
+          if (nextWinners) {
+            const isOdd = match.position % 2 === 1
+            await tx.match.update({
+              where: { id: nextWinners.id },
+              data: isOdd ? { player1Id: data.winnerId } : { player2Id: data.winnerId },
+            })
+          }
+
+          // Perdedor vai para losers bracket (em vez de eliminação)
+          if (loserId) {
+            const losersMatch = await tx.match.findFirst({
+              where: {
+                tournamentId: match.tournamentId,
+                metadata: { path: ['bracket'], equals: 'losers' },
+                OR: [{ player1Id: null }, { player2Id: null }],
+              },
+              orderBy: { round: 'asc' },
+            })
+            if (losersMatch) {
+              await tx.match.update({
+                where: { id: losersMatch.id },
+                data: !losersMatch.player1Id
+                  ? { player1Id: loserId }
+                  : { player2Id: loserId },
+              })
+            }
+          }
+        } else if (bracket === 'losers') {
+          // No losers bracket, perdedor é eliminado
+          // Vencedor avança no losers bracket
+          const nextLosers = await tx.match.findFirst({
+            where: {
+              tournamentId: match.tournamentId,
+              round: { gt: match.round },
+              metadata: { path: ['bracket'], equals: 'losers' },
+              OR: [{ player1Id: null }, { player2Id: null }],
+            },
+            orderBy: { round: 'asc' },
+          })
+          if (nextLosers) {
+            await tx.match.update({
+              where: { id: nextLosers.id },
+              data: !nextLosers.player1Id
+                ? { player1Id: data.winnerId }
+                : { player2Id: data.winnerId },
+            })
+          } else {
+            // Sem mais losers rounds — vai para grand final
+            const grandFinal = await tx.match.findFirst({
+              where: {
+                tournamentId: match.tournamentId,
+                metadata: { path: ['bracket'], equals: 'grand_final' },
+              },
+            })
+            if (grandFinal) {
+              await tx.match.update({
+                where: { id: grandFinal.id },
+                data: { player2Id: data.winnerId },
+              })
+            }
+          }
+        } else if (bracket === 'grand_final') {
+          // Grand Final completo
+          await this.completeTournament(tx, match.tournamentId, data.winnerId)
+        }
+      }
+    })
+
+    // Invalidar caches afetados (fire-and-forget)
+    invalidateCache('ranking:*')
+    invalidateCache('tournaments:*')
+
+    // Notificar jogadores sobre o avanço administrativo
+    const winnerName = match.player1Id === data.winnerId ? match.player1?.username : match.player2?.username
+    const loserName = match.player1Id === data.winnerId ? match.player2?.username : match.player1?.username
+
+    // Notificar vencedor
+    notify(
+      data.winnerId,
+      'MATCH',
+      'Você avançou!',
+      `Um administrador determinou que você avançará no torneio ${match.tournament.title}!`,
+      { matchId, tournamentId: match.tournamentId }
+    ).catch(() => {})
+
+    // Notificar perdedor
+    if (loserId) {
+      notify(
+        loserId,
+        'MATCH',
+        'Eliminado do torneio',
+        `Um administrador determinou que você foi eliminado do torneio ${match.tournament.title}.`,
+        { matchId, tournamentId: match.tournamentId }
+      ).catch(() => {})
+    }
+
+    // Emitir atualização WebSocket da partida
+    emitMatchUpdate(matchId, { matchId, winnerId: data.winnerId, status: 'COMPLETED', advancedByAdmin: true })
+
+    return this.getById(matchId)
+  }
 }
+

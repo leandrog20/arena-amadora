@@ -77,6 +77,12 @@ enum FriendRequestStatus {
   BLOCKED
 }
 
+enum ClanStatus {
+  ACTIVE
+  INACTIVE
+  DISBANDED
+}
+
 // ========== MODELS ==========
 
 model User {
@@ -116,6 +122,7 @@ model User {
   achievements        UserAchievement[]
   tournamentsCreated  Tournament[]     @relation("TournamentCreator")
   teamMemberships     TeamMember[]
+  clanMemberships     ClanMember[]
   friendRequestsSent  FriendRequest[]  @relation("FriendRequestSender")
   friendRequestsRecv  FriendRequest[]  @relation("FriendRequestReceiver")
   chatMessages        ChatMessage[]
@@ -226,7 +233,7 @@ model Participant {
   id           String   @id @default(uuid())
   userId       String   @map("user_id")
   tournamentId String   @map("tournament_id")
-  teamId       String?  @map("team_id")
+  clanId       String?  @map("clan_id")
   seed         Int?
   placement    Int?
   isEliminated Boolean  @default(false) @map("is_eliminated")
@@ -235,7 +242,7 @@ model Participant {
 
   user       User       @relation(fields: [userId], references: [id])
   tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
-  team       Team?      @relation(fields: [teamId], references: [id])
+  clan       Clan?      @relation(fields: [clanId], references: [id])
 
   @@unique([userId, tournamentId])
   @@index([tournamentId])
@@ -298,35 +305,38 @@ model Dispute {
   @@map("disputes")
 }
 
-model Team {
-  id          String       @id @default(uuid())
-  name        String       @unique
-  tag         String       @unique @db.VarChar(6)
+model Clan {
+  id          String     @id @default(uuid())
+  name        String     @unique
+  tag         String     @unique @db.VarChar(6)
   description String?
-  logoUrl     String?      @map("logo_url")
-  ownerId     String       @map("owner_id")
-  eloRating   Int          @default(1000) @map("elo_rating")
-  createdAt   DateTime     @default(now()) @map("created_at")
-  updatedAt   DateTime     @updatedAt @map("updated_at")
+  logoUrl     String?    @map("logo_url")
+  status      ClanStatus @default(ACTIVE)
+  ownerId     String     @map("owner_id")
+  coLeaderId  String?    @map("co_leader_id")
+  eloRating   Int        @default(1000) @map("elo_rating")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
 
-  members      TeamMember[]
+  members      ClanMember[]
   participants Participant[]
+  chatMessages ChatMessage[]
 
-  @@map("teams")
+  @@map("clans")
 }
 
-model TeamMember {
+model ClanMember {
   id       String   @id @default(uuid())
-  teamId   String   @map("team_id")
+  clanId   String   @map("clan_id")
   userId   String   @map("user_id")
   role     String   @default("member")
   joinedAt DateTime @default(now()) @map("joined_at")
 
-  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  clan Clan @relation(fields: [clanId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id])
 
-  @@unique([teamId, userId])
-  @@map("team_members")
+  @@unique([clanId, userId])
+  @@map("clan_members")
 }
 
 model FriendRequest {
@@ -364,15 +374,18 @@ model Notification {
 
 model ChatMessage {
   id           String   @id @default(uuid())
-  tournamentId String   @map("tournament_id")
+  tournamentId String?  @map("tournament_id")
+  clanId       String?  @map("clan_id")
   userId       String   @map("user_id")
   content      String
   createdAt    DateTime @default(now()) @map("created_at")
 
-  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  tournament Tournament? @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  clan       Clan?      @relation(fields: [clanId], references: [id], onDelete: Cascade)
   user       User       @relation(fields: [userId], references: [id])
 
   @@index([tournamentId, createdAt])
+  @@index([clanId, createdAt])
   @@map("chat_messages")
 }
 

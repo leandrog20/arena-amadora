@@ -16,6 +16,7 @@ import {
 import { useToastStore } from '@/stores/toast-store'
 import { motion } from 'framer-motion'
 import { Input } from '@/components/ui/input'
+import { AdminTournamentBracket } from '@/components/admin-tournament-bracket'
 import {
   Shield,
   Users,
@@ -32,6 +33,7 @@ import {
   Search,
   ShieldCheck,
   ChevronDown,
+  Zap,
 } from 'lucide-react'
 import {
   AreaChart,
@@ -161,6 +163,7 @@ export default function AdminPage() {
   const [userSearch, setUserSearch] = useState('')
   const [searchLoading, setSearchLoading] = useState(false)
   const [roleDialog, setRoleDialog] = useState<{ id: string; username: string; currentRole: string } | null>(null)
+  const [bracketDialog, setBracketDialog] = useState<any>(null)
 
   const loadData = useCallback(async () => {
     try {
@@ -750,15 +753,29 @@ export default function AdminPage() {
                             })}
                           </td>
                           <td className="p-3 text-center">
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              onClick={() => setDeleteDialog({ id: t.id, title: t.title })}
-                              disabled={t.status === 'IN_PROGRESS'}
-                              title={t.status === 'IN_PROGRESS' ? 'Não é possível excluir torneio em andamento' : 'Excluir torneio'}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                            <div className="flex items-center justify-center gap-1">
+                              {t.status === 'IN_PROGRESS' && (
+                                <Button
+                                  variant="gaming"
+                                  size="sm"
+                                  onClick={() => setBracketDialog(t)}
+                                  title="Gerenciar chaveamento"
+                                  className="flex items-center gap-1"
+                                >
+                                  <Zap className="h-4 w-4" />
+                                  <span className="hidden sm:inline text-xs">Chaveamento</span>
+                                </Button>
+                              )}
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => setDeleteDialog({ id: t.id, title: t.title })}
+                                disabled={t.status === 'IN_PROGRESS'}
+                                title={t.status === 'IN_PROGRESS' ? 'Não é possível excluir torneio em andamento' : 'Excluir torneio'}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -976,6 +993,15 @@ export default function AdminPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Tournament Bracket Manager */}
+      {bracketDialog && (
+        <AdminTournamentBracket
+          tournament={bracketDialog}
+          isOpen={!!bracketDialog}
+          onClose={() => setBracketDialog(null)}
+        />
+      )}
     </div>
   )
 }

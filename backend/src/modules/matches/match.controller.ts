@@ -1,6 +1,6 @@
 import { FastifyReply, FastifyRequest } from 'fastify'
 import { MatchService } from './match.service'
-import { submitResultSchema } from './match.schemas'
+import { submitResultSchema, advancePlayerByAdminSchema } from './match.schemas'
 import { sendSuccess } from '../../common/utils'
 
 const matchService = new MatchService()
@@ -29,6 +29,13 @@ export class MatchController {
     const { id } = request.params as { id: string }
     const { proofUrl } = request.body as { proofUrl: string }
     const result = await matchService.uploadProof(id, proofUrl, request.userId)
+    return sendSuccess(reply, result)
+  }
+
+  async advancePlayerByAdmin(request: FastifyRequest, reply: FastifyReply) {
+    const { id } = request.params as { id: string }
+    const data = advancePlayerByAdminSchema.parse(request.body)
+    const result = await matchService.advancePlayerByAdmin(id, data, request.userRole)
     return sendSuccess(reply, result)
   }
 }

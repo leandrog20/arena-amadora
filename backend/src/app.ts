@@ -14,7 +14,7 @@ import { userRoutes } from './modules/users/user.routes'
 import { tournamentRoutes } from './modules/tournaments/tournament.routes'
 import { matchRoutes } from './modules/matches/match.routes'
 import { walletRoutes } from './modules/wallet/wallet.routes'
-import { teamRoutes } from './modules/teams/team.routes'
+import { clanRoutes } from './modules/clans/clan.routes'
 import { socialRoutes } from './modules/social/social.routes'
 import { notificationRoutes } from './modules/notifications/notification.routes'
 import { disputeRoutes } from './modules/disputes/dispute.routes'
@@ -79,7 +79,8 @@ export async function buildApp() {
   await app.register(tournamentRoutes, { prefix: '/api/tournaments' })
   await app.register(matchRoutes, { prefix: '/api/matches' })
   await app.register(walletRoutes, { prefix: '/api/wallet' })
-  await app.register(teamRoutes, { prefix: '/api/teams' })
+  await app.register(clanRoutes, { prefix: '/api/clans' })
+  await app.register(clanRoutes, { prefix: '/api/teams' }) // Compatibilidade retroativa
   await app.register(socialRoutes, { prefix: '/api/social' })
   await app.register(notificationRoutes, { prefix: '/api/notifications' })
   await app.register(disputeRoutes, { prefix: '/api/disputes' })
