@@ -4,6 +4,10 @@ import { CreateTeamInput } from './team.schemas'
 import { notify } from '../../common/utils/notify'
 
 export class TeamService {
+  // Serviço de Teams desabilitado - modelo Team não existe no schema
+  // TODO: Implementar suporte a Teams quando o modelo for adicionado ao schema
+
+  /*
   async create(data: CreateTeamInput, ownerId: string) {
     const existing = await prisma.team.findFirst({
       where: { OR: [{ name: data.name }, { tag: data.tag.toUpperCase() }] },
@@ -161,4 +165,5 @@ export class TeamService {
 
     notify(newOwnerId, 'SOCIAL', 'Você é o novo dono!', `Você agora é dono da equipe ${team.name}`, { teamId }).catch(() => {})
   }
+  */
 }

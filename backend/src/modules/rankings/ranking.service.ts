@@ -85,26 +85,27 @@ export class RankingService {
     })
   }
 
-  async getTeamRanking(page = 1, limit = 50) {
-    return cached(`ranking:teams:${page}:${limit}`, 30, async () => {
-      const skip = (page - 1) * limit
+  // Equipes desabilitadas - modelo Team não existe no schema
+  // async getTeamRanking(page = 1, limit = 50) {
+  //   return cached(`ranking:teams:${page}:${limit}`, 30, async () => {
+  //     const skip = (page - 1) * limit
 
-      const [teams, total] = await Promise.all([
-        prisma.team.findMany({
-          include: { _count: { select: { members: true } } },
-          orderBy: { eloRating: 'desc' },
-          skip,
-          take: limit,
-        }),
-        prisma.team.count(),
-      ])
+  //     const [teams, total] = await Promise.all([
+  //       prisma.team.findMany({
+  //         include: { _count: { select: { members: true } } },
+  //         orderBy: { eloRating: 'desc' },
+  //         skip,
+  //         take: limit,
+  //       }),
+  //       prisma.team.count(),
+  //     ])
 
-      const ranked = teams.map((t, i) => ({
-        rank: skip + i + 1,
-        ...t,
-      }))
+  //     const ranked = teams.map((t, i) => ({
+  //       rank: skip + i + 1,
+  //       ...t,
+  //     }))
 
-      return { teams: ranked, total, page, limit }
-    })
-  }
+  //     return { teams: ranked, total, page, limit }
+  //   })
+  // }
 }

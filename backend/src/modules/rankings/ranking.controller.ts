@@ -18,9 +18,10 @@ export class RankingController {
     return sendPaginated(reply, result.players, result.total, result.page, result.limit)
   }
 
-  async getTeams(request: FastifyRequest, reply: FastifyReply) {
-    const { page, limit } = request.query as { page?: number; limit?: number }
-    const result = await rankingService.getTeamRanking(Number(page) || 1, Number(limit) || 50)
-    return sendPaginated(reply, result.teams, result.total, result.page, result.limit)
-  }
+  // Equipes desabilitadas
+  // async getTeams(request: FastifyRequest, reply: FastifyReply) {
+  //   const { page, limit } = request.query as { page?: number; limit?: number }
+  //   const result = await rankingService.getTeamRanking(Number(page) || 1, Number(limit) || 50)
+  //   return sendPaginated(reply, result.teams, result.total, result.page, result.limit)
+  // }
 }

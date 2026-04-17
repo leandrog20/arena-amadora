@@ -6,6 +6,9 @@ import { sendSuccess, sendPaginated } from '../../common/utils'
 const teamService = new TeamService()
 
 export class TeamController {
+  // Suporte a Teams desabilitado - modelo Team não existe no schema
+
+  /*
   async create(request: FastifyRequest, reply: FastifyReply) {
     const data = createTeamSchema.parse(request.body)
     const result = await teamService.create(data, request.userId)
@@ -56,4 +59,5 @@ export class TeamController {
     await teamService.transferOwnership(id, newOwnerId, request.userId)
     return sendSuccess(reply, { message: 'Propriedade transferida' })
   }
+  */
 }

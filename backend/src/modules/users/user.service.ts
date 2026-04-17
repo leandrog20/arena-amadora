@@ -29,7 +29,7 @@ export class UserService {
           select: {
             participations: true,
             achievements: true,
-            teamMemberships: true,
+            clanMemberships: true,
           },
         },
       },
