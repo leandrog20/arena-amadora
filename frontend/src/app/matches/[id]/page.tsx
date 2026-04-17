@@ -200,7 +200,7 @@ export default function MatchDetailPage() {
                         <p className="text-2xl font-bold">{match.player1Score}</p>
                       )}
                       {match.winnerId === match.player1Id && (
-                        <Badge variant="gaming" className="mt-2">
+                        <Badge variant="premium" className="mt-2">
                           <Crown className="h-3 w-3 mr-1" />
                           Vencedor
                         </Badge>
@@ -231,7 +231,7 @@ export default function MatchDetailPage() {
                         <p className="text-2xl font-bold">{match.player2Score}</p>
                       )}
                       {match.winnerId === match.player2Id && (
-                        <Badge variant="gaming" className="mt-2">
+                        <Badge variant="premium" className="mt-2">
                           <Crown className="h-3 w-3 mr-1" />
                           Vencedor
                         </Badge>
