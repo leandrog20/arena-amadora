@@ -121,7 +121,6 @@ model User {
   notifications       Notification[]
   achievements        UserAchievement[]
   tournamentsCreated  Tournament[]     @relation("TournamentCreator")
-  teamMemberships     TeamMember[]
   clanMemberships     ClanMember[]
   friendRequestsSent  FriendRequest[]  @relation("FriendRequestSender")
   friendRequestsRecv  FriendRequest[]  @relation("FriendRequestReceiver")
